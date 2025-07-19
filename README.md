@@ -581,14 +581,6 @@ curl "https://your-worker.workers.dev/game-history/-1001234567890"
 - [ ] 多语言支持：国际化界面和消息。
 - [ ] 移动端优化：响应式消息布局。
 
-## 许可证
+## License
 
-MIT License - 详见 LICENSE 文件
-
-## 贡献指南
-
-1. Fork 本项目
-2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+[MIT](./LICENSE) License © 2025-PRESENT [wudi](https://github.com/WuChenDi)
