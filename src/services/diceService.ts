@@ -1,20 +1,13 @@
 import { Bot } from 'grammy';
 import { sleep } from '@/utils';
 import type { Env } from '@/types';
-import { getConstants } from '@/config/constants';
+import { getConstants, type Constants } from '@/config/constants';
 
 export class DiceService {
-  private constants;
+  private constants: Constants;
 
-  constructor(private bot: Bot, env?: Env) {
-    // 如果传入了 env，则使用配置，否则使用默认值
-    this.constants = env ? getConstants(env) : {
-      DICE_ROLL_TIMEOUT_MS: 10000,
-      DICE_ROLL_MAX_RETRIES: 2,
-      DICE_ANIMATION_WAIT_MS: 4000, // 🔥 新增：等待骰子动画的时间
-      DICE_RESULT_DELAY_MS: 1000,   // 🔥 新增：发送结果前的额外延迟
-      MESSAGE_DELAY_MS: 2000
-    };
+  constructor(private bot: Bot, env: Env) {
+    this.constants = getConstants(env);
   }
 
   async rollDice(chatId: string, playerType: string, cardIndex: number): Promise<number> {

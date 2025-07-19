@@ -28,7 +28,7 @@ export class GameService {
     private bot: Bot
   ) {
     this.storage = new StorageService(env.BC_GAME_KV);
-    this.diceService = new DiceService(bot);
+    this.diceService = new DiceService(bot, env);
     this.constants = getConstants(env); // 🔥 从环境变量获取配置
   }
 
