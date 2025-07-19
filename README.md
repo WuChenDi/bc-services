@@ -7,7 +7,8 @@
 ### 🎲 游戏功能
 - **完整百家乐规则**：支持庄家、闲家、和局三种下注类型。
 - **真实补牌规则**：严格遵循百家乐标准补牌规则。
-- **自动游戏流程**：30秒下注时间，自动开牌，结果公布。
+- **沉浸式发牌体验**：先显示骰子动画，等待4秒后公布点数，营造真实赌场氛围。
+- **自动游戏流程**：30秒下注时间，精准倒计时提醒，自动开牌，结果公布。
 - **自动游戏模式**：支持连续自动进行游戏，每局间隔10秒。
 - **多群组支持**：每个群组通过 Durable Objects 维护独立游戏状态。
 - **数据持久化**：使用 Cloudflare KV 存储游戏记录，结合内存缓存。
@@ -93,17 +94,63 @@ wrangler login
    help - 查看帮助
    ```
 
-### 3. 配置环境变量
+### 3. 配置 wrangler.jsonc
 
-```bash
-# 设置 Bot Token（必需）
-wrangler secret put BOT_TOKEN
+更新 `wrangler.jsonc` 文件，配置基础信息和时间参数：
 
-# 设置 Webhook 密钥（可选）
-wrangler secret put WEBHOOK_SECRET
-
-# 设置允许的群组 ID（可选，用逗号分隔）
-wrangler secret put ALLOWED_CHAT_IDS
+```jsonc
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bc-services",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-07-19",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    // 基础配置
+    "BOT_TOKEN": "your-bot-token-here",
+    "ALLOWED_CHAT_IDS": "-1001234567890",
+    
+    // ===== 游戏时间配置 =====
+    
+    // 🎮 核心游戏时间
+    "BETTING_DURATION_MS": "30000",           // 下注阶段持续时间 (30秒)
+    "AUTO_GAME_INTERVAL_MS": "10000",         // 自动游戏间隔时间 (10秒)
+    
+    // 🎲 骰子相关时间
+    "DICE_ROLL_TIMEOUT_MS": "10000",          // 骰子投掷超时 (10秒)
+    "DICE_ROLL_MAX_RETRIES": "2",             // 骰子投掷最大重试次数
+    "DICE_ANIMATION_WAIT_MS": "4000",         // 骰子动画等待时间 (4秒)
+    "DICE_RESULT_DELAY_MS": "1000",           // 结果发送延迟 (1秒)
+    
+    // ⏱️ 流程控制时间
+    "CARD_DEAL_DELAY_MS": "500",              // 发牌间隔 (0.5秒)
+    "MESSAGE_DELAY_MS": "2000",               // 消息发送间隔 (2秒)
+    
+    // 🔒 系统保护时间
+    "GLOBAL_PROCESS_TIMEOUT_MS": "90000",     // 游戏处理全局超时 (90秒)
+    "CLEANUP_DELAY_MS": "30000"               // 清理延迟时间 (30秒)
+  },
+  "kv_namespaces": [
+    {
+      "binding": "BC_GAME_KV",
+      "id": "your-kv-namespace-id"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "GAME_ROOMS",
+        "class_name": "BaccaratGameRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["BaccaratGameRoom"]
+    }
+  ]
+}
 ```
 
 ### 4. 创建 KV 存储
@@ -112,23 +159,7 @@ wrangler secret put ALLOWED_CHAT_IDS
 # 创建 KV namespace
 wrangler kv:namespace create "BC_GAME_KV"
 
-# 更新 wrangler.toml 文件
-# 添加返回的 namespace ID 到配置中
-```
-
-wrangler.toml 配置示例：
-```toml
-name = "baccarat-bot"
-main = "src/index.ts"
-compatibility_date = "2024-01-15"
-
-[[kv_namespaces]]
-binding = "BC_GAME_KV"
-id = "your-kv-namespace-id"
-
-[[durable_objects.bindings]]
-name = "GAME_ROOMS"
-class_name = "BaccaratGameRoom"
+# 将返回的 namespace ID 添加到 wrangler.jsonc 中
 ```
 
 ### 5. 部署
@@ -158,7 +189,7 @@ Bot: 🎲 第 20250719143001 局百家乐开始！
      💡 或使用 /process 立即开牌
 ```
 
-### 2. 下注阶段
+### 2. 下注阶段（精准倒计时）
 ```
 玩家A: /bet banker 100
 Bot: ✅ 玩家A 下注成功！💰 庄家 100 点
@@ -170,26 +201,46 @@ Bot: ✅ 玩家B 下注成功！💰 闲家 50 点
      👥 当前参与人数：2
      ⏰ 剩余时间：20 秒
 
-玩家C: /bet tie 25
-Bot: ✅ 玩家C 下注成功！💰 和局 25 点
-     👥 当前参与人数：3
-     ⏰ 剩余时间：15 秒
+# 系统自动倒计时提醒
+Bot: ⏰ 下注倒计时：20秒！
+     👥 当前参与人数：2
+     💡 抓紧时间下注哦~
+
+Bot: ⏰ 下注倒计时：10秒！
+     👥 当前参与人数：2
+     💡 抓紧时间下注哦~
+
+Bot: ⏰ 下注倒计时：5秒！
+     👥 当前参与人数：2
+     💡 抓紧时间下注哦~
 ```
 
-### 3. 自动处理
+### 3. 沉浸式开牌体验
 30秒后或手动 `/process`：
 ```
 Bot: ⛔️ 第 20250719143001 局停止下注！
      📊 下注汇总：
      🏦 庄家: 100 点
      👤 闲家: 50 点
-     🤝 和局: 25 点
      
      🎲 开牌阶段开始！
-     🏦 庄家第1张牌: 4 点
-     👤 闲家第1张牌: 6 点
-     🏦 庄家第2张牌: 3 点
-     👤 闲家第2张牌: 2 点
+     🃏 庄家和闲家各发两张牌...
+
+# 发送骰子动画
+Bot: 🎲 (骰子动画滚动 4秒)
+
+# 4秒后公布结果
+Bot: 🎯 🏦 庄家第1张牌开出：4 点
+
+# 短暂停顿 1秒后继续
+Bot: 🎲 (骰子动画滚动 4秒)
+Bot: 🎯 👤 闲家第1张牌开出：6 点
+
+Bot: 🎲 (骰子动画滚动 4秒)
+Bot: 🎯 🏦 庄家第2张牌开出：3 点
+
+Bot: 🎲 (骰子动画滚动 4秒)
+Bot: 🎯 👤 闲家第2张牌开出：2 点
      
      📊 前两张牌点数：
      🏦 庄家: 4 + 3 = 7 点
@@ -207,7 +258,6 @@ Bot: ⛔️ 第 20250719143001 局停止下注！
      
      ❌ 失败者：
      玩家A: -100
-     玩家C: -25
      
      🔄 自动游戏模式：10秒后开始下一局
 ```
@@ -220,6 +270,59 @@ Bot: 🤖 自动游戏模式已开启！
      ⏰ 每局间隔10秒
      💡 即使无人下注也会继续发牌
      🛑 使用 /stopauto 关闭自动模式
+```
+
+## 时间参数配置详解
+
+### 🎮 核心游戏时间配置
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `BETTING_DURATION_MS` | 30000 | 下注阶段持续时间（毫秒），用户可以下注的总时长 |
+| `AUTO_GAME_INTERVAL_MS` | 10000 | 自动游戏间隔时间（毫秒），每局游戏结束后到下一局开始的等待时间 |
+
+### 🎲 骰子体验配置
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `DICE_ROLL_TIMEOUT_MS` | 10000 | 骰子投掷超时时间（毫秒），单次骰子API调用的最大等待时间 |
+| `DICE_ROLL_MAX_RETRIES` | 2 | 骰子投掷最大重试次数，失败后重试的次数 |
+| `DICE_ANIMATION_WAIT_MS` | 4000 | 骰子动画等待时间（毫秒），等待骰子动画播放完成的时间 |
+| `DICE_RESULT_DELAY_MS` | 1000 | 结果发送延迟（毫秒），发送点数结果后的停顿时间，让用户消化结果 |
+
+### ⏱️ 流程控制配置
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `CARD_DEAL_DELAY_MS` | 500 | 发牌间隔时间（毫秒），每张牌之间的等待时间，让用户看清楚发牌过程 |
+| `MESSAGE_DELAY_MS` | 2000 | 消息发送间隔（毫秒），重要消息之间的间隔，避免刷屏 |
+
+### 🔒 系统保护配置
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `GLOBAL_PROCESS_TIMEOUT_MS` | 90000 | 游戏处理全局超时（毫秒），整个游戏处理的最大时长，防止卡死 |
+| `CLEANUP_DELAY_MS` | 30000 | 清理延迟时间（毫秒），游戏结束后多久开始清理资源 |
+
+### 🎯 时间配置优化建议
+
+**快节奏游戏设置**：
+```jsonc
+"BETTING_DURATION_MS": "20000",        // 20秒下注
+"AUTO_GAME_INTERVAL_MS": "5000",       // 5秒间隔
+"DICE_ANIMATION_WAIT_MS": "3000",      // 3秒动画
+"MESSAGE_DELAY_MS": "1500"             // 1.5秒消息间隔
+```
+
+**慢节奏体验设置**：
+```jsonc
+"BETTING_DURATION_MS": "45000",        // 45秒下注
+"AUTO_GAME_INTERVAL_MS": "15000",      // 15秒间隔
+"DICE_ANIMATION_WAIT_MS": "5000",      // 5秒动画
+"MESSAGE_DELAY_MS": "3000"             // 3秒消息间隔
+```
+
+**网络环境差的设置**：
+```jsonc
+"DICE_ROLL_TIMEOUT_MS": "15000",       // 15秒超时
+"DICE_ROLL_MAX_RETRIES": "3",          // 3次重试
+"GLOBAL_PROCESS_TIMEOUT_MS": "120000"  // 2分钟总超时
 ```
 
 ## API 使用示例
@@ -264,13 +367,35 @@ curl -X POST "https://your-worker.workers.dev/send-message" \
 
 ```
 ├── src/
-│   ├── index.ts            # 主程序文件，包含 Bot 命令处理和 API 路由
-│   ├── baccaratGameRoom.ts # 游戏房间逻辑，处理游戏状态和流程
-│   ├── types.ts            # 类型定义
-├── package.json            # 项目依赖
-├── wrangler.toml           # Cloudflare Workers 配置
-├── tsconfig.json           # TypeScript 配置
-└── README.md               # 项目说明文档
+│   ├── index.ts                    # 主程序文件
+│   ├── config/
+│   │   └── constants.ts           # 时间配置管理
+│   ├── durable-objects/
+│   │   └── baccaratGameRoom.ts    # 游戏房间 Durable Object
+│   ├── handlers/
+│   │   ├── apiHandlers.ts         # HTTP API 路由处理
+│   │   ├── commandHandlers.ts     # Bot 命令处理
+│   │   └── index.ts               # 处理器导出
+│   ├── services/
+│   │   ├── botService.ts          # Telegram Bot 服务
+│   │   ├── diceService.ts         # 骰子发送服务（含动画流程）
+│   │   ├── gameService.ts         # 核心游戏逻辑
+│   │   ├── storageService.ts      # KV 存储服务
+│   │   └── index.ts               # 服务导出
+│   ├── types/
+│   │   ├── api.ts                 # API 类型定义
+│   │   ├── env.ts                 # 环境变量类型
+│   │   ├── game.ts                # 游戏相关类型
+│   │   └── index.ts               # 类型导出
+│   └── utils/
+│       ├── gameUtils.ts           # 游戏工具函数
+│       ├── messageUtils.ts        # 消息格式化工具
+│       ├── timeUtils.ts           # 时间工具函数
+│       └── index.ts               # 工具导出
+├── package.json                   # 项目依赖
+├── wrangler.jsonc                 # Cloudflare Workers 配置（含时间参数）
+├── tsconfig.json                  # TypeScript 配置
+└── README.md                      # 项目说明文档
 ```
 
 ## 核心技术特性
@@ -286,6 +411,44 @@ enum GameState {
 }
 ```
 
+### 沉浸式骰子体验
+```typescript
+// 骰子发送流程
+async rollDice(chatId: string, playerType: string, cardIndex: number): Promise<number> {
+  // 1. 🎲 发送骰子动画
+  const diceMessage = await this.bot.api.sendDice(chatId, '🎲');
+  
+  // 2. ⏳ 等待动画播放完成（4秒）
+  await sleep(this.constants.DICE_ANIMATION_WAIT_MS);
+  
+  // 3. 📢 公布点数结果
+  await this.sendDiceResult(chatId, playerType, cardIndex, diceValue);
+  
+  // 4. 🔄 停顿后继续下一张牌（1秒）
+  await sleep(this.constants.DICE_RESULT_DELAY_MS);
+}
+```
+
+### 精准倒计时系统
+```typescript
+// 动态倒计时，确保时间一致性
+private setupCountdownTimers(chatId: string, gameNumber: string): void {
+  const gameEndTime = this.game.bettingEndTime;
+  const intervals = [20, 10, 5]; // 提醒时间点
+
+  intervals.forEach(seconds => {
+    const reminderTime = gameEndTime - (seconds * 1000);
+    const timeToReminder = reminderTime - Date.now();
+
+    if (timeToReminder > 0) {
+      setTimeout(() => {
+        sendCountdownMessage(seconds);
+      }, timeToReminder);
+    }
+  });
+}
+```
+
 ### 数据存储策略
 - **双重存储**：Durable Objects 维护当前游戏状态，Cloudflare KV 存储游戏记录。
 - **历史记录**：最近100局游戏记录保存在 KV 中。
@@ -297,11 +460,6 @@ enum GameState {
 - **庄家规则**：根据自身点数和闲家第三张牌决定补牌。
 - **天牌判断**：庄家或闲家前两张牌总和为8或9点，立即结束游戏。
 
-### 骰子机制
-- 使用 Telegram 的 `sendDice` API 生成1-6的随机点数模拟牌值。
-- 每张牌通过发送骰子动画获得点数，确保随机性。
-- 骰子动画完成后显示点数，增加游戏趣味性。
-
 ## 环境变量配置
 
 | 变量名             | 必需 | 说明                           | 示例                          |
@@ -309,6 +467,8 @@ enum GameState {
 | `BOT_TOKEN`        | ✅   | Telegram Bot Token             | `1234567890:ABC...`          |
 | `WEBHOOK_SECRET`   | ❌   | Webhook 验证密钥               | `your-secret-key`            |
 | `ALLOWED_CHAT_IDS` | ❌   | 允许的群组ID列表（逗号分隔）   | `-1001234567890,-1009876543210` |
+
+所有时间相关参数都在 `wrangler.jsonc` 的 `vars` 字段中配置。
 
 ## 监控和维护
 
@@ -325,6 +485,7 @@ wrangler tail --env production
 - 监控活跃游戏数量和 API 响应时间。
 - 跟踪错误率和异常情况。
 - 检查 KV 存储的读写性能。
+- 监控骰子 API 调用成功率和延迟。
 
 ### 数据清理
 - 非自动模式下，游戏数据在游戏结束后30秒自动清理。
@@ -342,11 +503,13 @@ wrangler tail --env production
 - 按需创建 Bot 实例，减少资源占用。
 - 优化 KV 读写，优先使用内存缓存。
 - 使用 Durable Objects 确保群组隔离和状态一致性。
+- 根据网络环境调整骰子超时和重试参数。
 
 ### 3. 错误处理
 - 网络请求失败时自动重试。
 - 游戏状态异常时通过 `/stopgame` 清理。
 - 用户输入验证，确保下注格式和金额有效。
+- 骰子发送失败时使用随机值保证游戏流程。
 
 ## 故障排除
 
@@ -362,7 +525,17 @@ wrangler tail --env production
    - 验证下注格式（例如 `/bet banker 100`）。
    - 确认游戏状态为 `betting`。
 
-3. **Webhook 问题**
+3. **倒计时时间不一致**
+   - 检查服务器时间同步。
+   - 确认 `BETTING_DURATION_MS` 配置正确。
+   - 验证倒计时逻辑是否基于同一时间源。
+
+4. **骰子发送失败**
+   - 检查 Telegram API 连接状态。
+   - 调整 `DICE_ROLL_TIMEOUT_MS` 和重试次数。
+   - 确认群组允许发送动画消息。
+
+5. **Webhook 问题**
    - 验证 Workers URL 是否可访问。
    - 检查 SSL 证书是否有效。
    - 确保防火墙未阻止 Telegram 的请求。
@@ -388,16 +561,25 @@ curl "https://your-worker.workers.dev/game-history/-1001234567890"
 - [ ] 用户积分系统：记录玩家胜负和积分。
 - [ ] 统计报表：生成每日/每周游戏统计。
 - [ ] 定时游戏：按计划自动开启游戏。
+- [ ] 下注限制：设置用户单次和总下注限额。
 
 ### 2. 社交功能
 - [ ] 排行榜：显示群组内玩家胜率和收益排名。
 - [ ] 成就系统：解锁游戏里程碑奖励。
 - [ ] 群组对战：支持多群组竞技模式。
+- [ ] 好友系统：添加好友并查看战绩。
 
 ### 3. 管理功能
 - [ ] 管理员面板：通过 Bot 命令管理游戏参数。
 - [ ] 用户权限：设置下注限制或管理员权限。
 - [ ] 反作弊：检测异常下注行为。
+- [ ] 时间配置热更新：运行时调整游戏参数。
+
+### 4. 体验优化
+- [ ] 声音效果：配合骰子动画的音效。
+- [ ] 自定义表情：个性化的牌面显示。
+- [ ] 多语言支持：国际化界面和消息。
+- [ ] 移动端优化：响应式消息布局。
 
 ## 许可证
 
@@ -410,9 +592,3 @@ MIT License - 详见 LICENSE 文件
 3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 开启 Pull Request
-
-## 支持
-
-如果你觉得这个项目有用，请给它一个 ⭐️！
-
-有问题或建议？欢迎提交 Issue 或 Pull Request。
