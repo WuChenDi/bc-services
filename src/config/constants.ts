@@ -1,0 +1,2 @@
+export const BETTING_DURATION_MS = 30000;
+export const AUTO_GAME_INTERVAL_MS = 10000;

@@ -1,11 +1,3 @@
-export interface Env {
-  BOT_TOKEN: string;
-  WEBHOOK_SECRET?: string;
-  ALLOWED_CHAT_IDS?: string;
-  GAME_ROOMS: DurableObjectNamespace;
-  BC_GAME_KV: KVNamespace;
-}
-
 export enum GameState {
   Idle = 'idle',
   Betting = 'betting',
@@ -20,10 +12,16 @@ export enum BetType {
   Tie = 'tie'
 }
 
+export interface BetInfo {
+  type: BetType;
+  amount: number;
+  userName: string;
+}
+
 export interface GameData {
   gameNumber: string;
   state: GameState;
-  bets: { [userId: string]: { type: BetType; amount: number; userName: string } };
+  bets: { [userId: string]: BetInfo };
   cards: {
     banker: number[];
     player: number[];
@@ -38,21 +36,8 @@ export interface GameData {
   chatId: string;
 }
 
-export interface GameRecord {
-  gameNumber: string;
-  startTime: number;
+export interface GameRecord extends Omit<GameData, 'bettingEndTime'> {
   endTime: number;
-  chatId: string;
-  bets: { [userId: string]: { type: BetType; amount: number; userName: string } };
-  cards: {
-    banker: number[];
-    player: number[];
-  };
-  result: {
-    banker: number;
-    player: number;
-    winner: BetType | null;
-  };
   totalBets: number;
   totalAmount: number;
 }
