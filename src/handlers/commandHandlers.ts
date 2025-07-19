@@ -31,6 +31,7 @@ export class CommandHandlers {
     this.bot.command('status', this.handleStatus.bind(this));
     this.bot.command('history', this.handleHistory.bind(this));
     this.bot.command('gameinfo', this.handleGameInfo.bind(this));
+    this.bot.command('stopgame', this.handleStopGame.bind(this)); // 🔥 添加缺失的命令
     this.bot.command('help', this.handleHelp.bind(this));
   }
 
@@ -246,6 +247,41 @@ export class CommandHandlers {
   };
 
   /**
+   * /stopgame 命令处理
+   */
+  private handleStopGame = async (ctx: Context): Promise<void> => {
+    const chatId = this.validateChatId(ctx);
+    if (!chatId) {
+      await this.sendErrorMessage(ctx, '无法获取聊天ID');
+      return;
+    }
+
+    try {
+      const room = this.getRoomStub(chatId);
+      const response = await room.fetch(new Request('https://game.room/stop-game', {
+        method: 'POST'
+      }));
+
+      const result = await response.json() as ApiResponse;
+
+      if (result.success) {
+        await ctx.reply(
+          `🛑 **游戏已强制停止**\n\n` +
+          `✅ 当前游戏已终止\n` +
+          `🔄 自动游戏模式已关闭\n` +
+          `💡 使用 /newgame 开始新游戏`,
+          { parse_mode: 'Markdown' }
+        );
+      } else {
+        await this.sendErrorMessage(ctx, result.error || '停止游戏失败');
+      }
+    } catch (error) {
+      console.error('Stop game error:', error);
+      await this.sendErrorMessage(ctx, '停止游戏失败，请稍后再试');
+    }
+  };
+
+  /**
    * /bet 命令处理
    */
   private handleBet = async (ctx: Context): Promise<void> => {
@@ -264,7 +300,6 @@ export class CommandHandlers {
         return;
       }
 
-      // 修复：添加空值检查
       const betTypeInput = args[0]?.toLowerCase();
       const amountInput = args[1];
 
@@ -273,22 +308,19 @@ export class CommandHandlers {
         return;
       }
 
-      // 验证下注类型
       if (!Object.values(BetType).includes(betTypeInput as BetType)) {
         await ctx.reply('❌ 下注类型错误\n可选类型: banker(庄家), player(闲家), tie(和局)');
         return;
       }
 
       const betType = betTypeInput as BetType;
-
-      // 验证下注金额
       const amount = parseInt(amountInput, 10);
+      
       if (isNaN(amount) || amount <= 0) {
         await ctx.reply('❌ 下注金额必须是大于0的数字');
         return;
       }
 
-      // 限制最大下注金额
       if (amount > 10000) {
         await ctx.reply('❌ 单次下注金额不能超过10000点');
         return;
@@ -352,7 +384,6 @@ export class CommandHandlers {
       if (!result.success) {
         await this.sendErrorMessage(ctx, result.error || '处理游戏失败');
       }
-      // 成功时不需要回复，游戏服务会自动发送消息
     } catch (error) {
       console.error('Process game error:', error);
       await this.sendErrorMessage(ctx, '处理游戏失败，请稍后再试');
@@ -453,7 +484,6 @@ export class CommandHandlers {
       return;
     }
 
-    // 验证游戏编号格式（17位数字）
     if (!/^\d{17}$/.test(gameNumber)) {
       await ctx.reply('❌ 游戏编号格式错误\n应为17位数字');
       return;

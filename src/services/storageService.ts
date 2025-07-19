@@ -5,8 +5,10 @@ export class StorageService {
 
   async saveGameRecord(game: GameData): Promise<void> {
     try {
+      const { bettingEndTime, ...gameWithoutBettingEndTime } = game;
+      
       const gameRecord: GameRecord = {
-        ...game,
+        ...gameWithoutBettingEndTime,
         endTime: Date.now(),
         totalBets: Object.keys(game.bets).length,
         totalAmount: Object.values(game.bets).reduce((sum, bet) => sum + bet.amount, 0)

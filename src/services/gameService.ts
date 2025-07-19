@@ -1,5 +1,13 @@
 import { Bot } from 'grammy';
-import { BetType, type Env, type GameData, GameState, type BetInfo, type GameRecord, type GameStatusResponse, type PlaceBetResponse, type StartGameResponse, type ApiResponse } from '@/types';
+import {
+  BetType,
+  type Env,
+  type GameData, GameState,
+  type GameStatusResponse,
+  type PlaceBetResponse,
+  type StartGameResponse,
+  type ApiResponse
+} from '@/types';
 import { StorageService, DiceService } from '@/services';
 import { sleep, formatBetSummary, formatGameResult, calculatePoints } from '@/utils';
 import { BETTING_DURATION_MS, AUTO_GAME_INTERVAL_MS } from '@/config/constants';
@@ -9,6 +17,7 @@ export class GameService {
   private storage: StorageService;
   private diceService: DiceService;
   private timers: Set<number> = new Set();
+  private isProcessing: boolean = false;
 
   constructor(
     private state: DurableObjectState,
@@ -21,6 +30,17 @@ export class GameService {
 
   async initialize(): Promise<void> {
     this.game = await this.state.storage.get('game') || null;
+
+    if (this.game) {
+      const now = Date.now();
+      if (this.game.state === GameState.Betting && now > this.game.bettingEndTime + 10000) {
+        console.log('Detected stuck betting game, auto-processing...');
+        await this.processGame();
+      } else if (this.game.state === GameState.Processing || this.game.state === GameState.Revealing) {
+        console.log('Detected stuck processing/revealing game, cleaning up...');
+        await this.cleanupGame();
+      }
+    }
   }
 
   async startGame(chatId: string): Promise<StartGameResponse> {
@@ -29,6 +49,7 @@ export class GameService {
     }
 
     this.clearAllTimers();
+    this.isProcessing = false;
 
     const gameNumber = this.generateGameNumber();
     const now = Date.now();
@@ -81,73 +102,97 @@ export class GameService {
   async processGame(): Promise<void> {
     if (!this.game || this.game.state !== GameState.Betting) return;
 
-    this.game.state = GameState.Processing;
-    await this.state.storage.put('game', this.game);
-    this.clearAllTimers();
-
-    const betsCount = Object.keys(this.game.bets).length;
-    if (betsCount === 0) {
-      await this.bot.api.sendMessage(this.game.chatId,
-        `😔 **第 ${this.game.gameNumber} 局无人下注**\n\n` +
-        `🎲 但游戏继续进行，开始发牌...`,
-        { parse_mode: 'Markdown' }
-      );
-    } else {
-      await this.showBetSummary();
-      await sleep(3000);
+    if (this.isProcessing) {
+      console.log('Game is already being processed, skipping...');
+      return;
     }
 
-    await this.startRevealing();
+    this.isProcessing = true;
+
+    try {
+      this.game.state = GameState.Processing;
+      await this.state.storage.put('game', this.game);
+      this.clearAllTimers();
+
+      const betsCount = Object.keys(this.game.bets).length;
+      if (betsCount === 0) {
+        await this.bot.api.sendMessage(this.game.chatId,
+          `😔 **第 ${this.game.gameNumber} 局无人下注**\n\n` +
+          `🎲 但游戏继续进行，开始发牌...`,
+          { parse_mode: 'Markdown' }
+        );
+      } else {
+        await this.showBetSummary();
+        await sleep(3000);
+      }
+
+      await this.startRevealing();
+    } catch (error) {
+      console.error('Process game error:', error);
+      this.isProcessing = false;
+      await this.cleanupGame();
+    }
   }
 
   private async startRevealing(): Promise<void> {
     if (!this.game) return;
 
-    this.game.state = GameState.Revealing;
-    await this.state.storage.put('game', this.game);
-
-    await this.bot.api.sendMessage(this.game.chatId,
-      `🎲 **开牌阶段开始！**\n\n` +
-      `🃏 庄家和闲家各发两张牌...`,
-      { parse_mode: 'Markdown' }
-    );
-
     try {
-      for (let i = 0; i < 2; i++) {
-        await sleep(1000);
-        const bankerCard = await this.diceService.rollDice(this.game.chatId, 'banker', i + 1);
-        this.game.cards.banker.push(bankerCard);
-
-        await sleep(1000);
-        const playerCard = await this.diceService.rollDice(this.game.chatId, 'player', i + 1);
-        this.game.cards.player.push(playerCard);
-      }
-
+      this.game.state = GameState.Revealing;
       await this.state.storage.put('game', this.game);
 
-      const bankerSum = calculatePoints(this.game.cards.banker);
-      const playerSum = calculatePoints(this.game.cards.player);
-
-      await sleep(2000);
       await this.bot.api.sendMessage(this.game.chatId,
-        `📊 **前两张牌点数:**\n` +
-        `🏦 庄家: ${this.game.cards.banker.join(' + ')} = **${bankerSum} 点**\n` +
-        `👤 闲家: ${this.game.cards.player.join(' + ')} = **${playerSum} 点**`,
+        `🎲 **开牌阶段开始！**\n\n` +
+        `🃏 庄家和闲家各发两张牌...`,
         { parse_mode: 'Markdown' }
       );
 
-      await sleep(3000);
+      const revealingTimeout = setTimeout(async () => {
+        console.log('Revealing timeout, cleaning up game...');
+        await this.cleanupGame();
+      }, 60000);
 
-      if (bankerSum >= 8 || playerSum >= 8) {
+      try {
+        for (let i = 0; i < 2; i++) {
+          await sleep(1000);
+          const bankerCard = await this.diceService.rollDice(this.game.chatId, 'banker', i + 1);
+          this.game.cards.banker.push(bankerCard);
+
+          await sleep(1000);
+          const playerCard = await this.diceService.rollDice(this.game.chatId, 'player', i + 1);
+          this.game.cards.player.push(playerCard);
+        }
+
+        clearTimeout(revealingTimeout);
+        await this.state.storage.put('game', this.game);
+
+        const bankerSum = calculatePoints(this.game.cards.banker);
+        const playerSum = calculatePoints(this.game.cards.player);
+
+        await sleep(2000);
         await this.bot.api.sendMessage(this.game.chatId,
-          '🎯 **天牌！无需补牌！**',
+          `📊 **前两张牌点数:**\n` +
+          `🏦 庄家: ${this.game.cards.banker.join(' + ')} = **${bankerSum} 点**\n` +
+          `👤 闲家: ${this.game.cards.player.join(' + ')} = **${playerSum} 点**`,
           { parse_mode: 'Markdown' }
         );
-      } else {
-        await this.handleThirdCard(bankerSum, playerSum);
-      }
 
-      await this.calculateResult();
+        await sleep(3000);
+
+        if (bankerSum >= 8 || playerSum >= 8) {
+          await this.bot.api.sendMessage(this.game.chatId,
+            '🎯 **天牌！无需补牌！**',
+            { parse_mode: 'Markdown' }
+          );
+        } else {
+          await this.handleThirdCard(bankerSum, playerSum);
+        }
+
+        await this.calculateResult();
+      } catch (revealError) {
+        clearTimeout(revealingTimeout);
+        throw revealError;
+      }
     } catch (error) {
       console.error('Revealing error:', error);
       await this.bot.api.sendMessage(this.game.chatId,
@@ -203,54 +248,88 @@ export class GameService {
   private async calculateResult(): Promise<void> {
     if (!this.game) return;
 
-    const bankerFinal = calculatePoints(this.game.cards.banker);
-    const playerFinal = calculatePoints(this.game.cards.player);
+    try {
+      const bankerFinal = calculatePoints(this.game.cards.banker);
+      const playerFinal = calculatePoints(this.game.cards.player);
 
-    this.game.result.banker = bankerFinal;
-    this.game.result.player = playerFinal;
+      this.game.result.banker = bankerFinal;
+      this.game.result.player = playerFinal;
 
-    if (bankerFinal > playerFinal) {
-      this.game.result.winner = BetType.Banker;
-    } else if (playerFinal > bankerFinal) {
-      this.game.result.winner = BetType.Player;
-    } else {
-      this.game.result.winner = BetType.Tie;
-    }
+      if (bankerFinal > playerFinal) {
+        this.game.result.winner = BetType.Banker;
+      } else if (playerFinal > bankerFinal) {
+        this.game.result.winner = BetType.Player;
+      } else {
+        this.game.result.winner = BetType.Tie;
+      }
 
-    this.game.state = GameState.Finished;
-    await this.state.storage.put('game', this.game);
+      this.game.state = GameState.Finished;
+      await this.state.storage.put('game', this.game);
 
-    await this.storage.saveGameRecord(this.game);
+      try {
+        await this.storage.saveGameRecord(this.game);
+      } catch (saveError) {
+        console.error('Failed to save game record, but continuing...', saveError);
+      }
 
-    await sleep(3000);
-    await this.bot.api.sendMessage(this.game.chatId, formatGameResult(this.game), { parse_mode: 'Markdown' });
+      await sleep(3000);
 
-    if (await this.state.storage.get('autoGame')) {
-      const nextGameTimer = setTimeout(async () => {
-        if (await this.state.storage.get('autoGame')) {
-          await this.startAutoGame(this.game!.chatId);
+      try {
+        await this.bot.api.sendMessage(this.game.chatId, formatGameResult(this.game), { parse_mode: 'Markdown' });
+      } catch (msgError) {
+        console.error('Failed to send result message:', msgError);
+      }
+
+      this.isProcessing = false;
+
+      try {
+        const autoGameEnabled = await this.state.storage.get('autoGame');
+        if (autoGameEnabled) {
+          const nextGameTimer = setTimeout(async () => {
+            try {
+              const stillAutoEnabled = await this.state.storage.get('autoGame');
+              if (stillAutoEnabled && this.game) {
+                await this.startAutoGame(this.game.chatId);
+              }
+            } catch (autoError) {
+              console.error('Auto game error:', autoError);
+              await this.cleanupGame();
+            }
+          }, AUTO_GAME_INTERVAL_MS);
+          this.timers.add(nextGameTimer);
+        } else {
+          const cleanupTimer = setTimeout(async () => {
+            await this.cleanupGame();
+          }, 30000);
+          this.timers.add(cleanupTimer);
         }
-      }, AUTO_GAME_INTERVAL_MS);
-      this.timers.add(nextGameTimer);
-    } else {
-      const cleanupTimer = setTimeout(async () => {
+      } catch (autoCheckError) {
+        console.error('Failed to check auto game status:', autoCheckError);
         await this.cleanupGame();
-      }, 30000);
-      this.timers.add(cleanupTimer);
+      }
+    } catch (error) {
+      console.error('Calculate result error:', error);
+      this.isProcessing = false;
+      await this.cleanupGame();
     }
   }
 
   async startAutoGame(chatId: string): Promise<void> {
-    const result = await this.startGame(chatId);
-    if (result.success) {
-      await this.bot.api.sendMessage(chatId,
-        `🤖 **自动游戏 - 第 ${result.gameNumber} 局开始！**\n\n` +
-        `💰 下注时间：30秒\n` +
-        `📝 下注格式：/bet banker 100\n` +
-        `⏰ 30秒后将自动处理游戏...\n` +
-        `🔄 游戏将持续自动进行`,
-        { parse_mode: 'Markdown' }
-      );
+    try {
+      const result = await this.startGame(chatId);
+      if (result.success) {
+        await this.bot.api.sendMessage(chatId,
+          `🤖 **自动游戏 - 第 ${result.gameNumber} 局开始！**\n\n` +
+          `💰 下注时间：30秒\n` +
+          `📝 下注格式：/bet banker 100\n` +
+          `⏰ 30秒后将自动处理游戏...\n` +
+          `🔄 游戏将持续自动进行`,
+          { parse_mode: 'Markdown' }
+        );
+      }
+    } catch (error) {
+      console.error('Start auto game error:', error);
+      await this.cleanupGame();
     }
   }
 
@@ -264,12 +343,17 @@ export class GameService {
 
   async disableAutoGame(): Promise<ApiResponse> {
     await this.state.storage.put('autoGame', false);
+    this.clearAllTimers();
     return { success: true, message: 'Auto game disabled' };
   }
 
   private async showBetSummary(): Promise<void> {
     if (!this.game) return;
-    await this.bot.api.sendMessage(this.game.chatId, formatBetSummary(this.game), { parse_mode: 'Markdown' });
+    try {
+      await this.bot.api.sendMessage(this.game.chatId, formatBetSummary(this.game), { parse_mode: 'Markdown' });
+    } catch (error) {
+      console.error('Failed to show bet summary:', error);
+    }
   }
 
   private setupCountdownTimers(chatId: string, gameNumber: string): void {
@@ -277,35 +361,50 @@ export class GameService {
 
     intervals.forEach(seconds => {
       const timer = setTimeout(async () => {
-        if (this.game && this.game.state === GameState.Betting && this.game.gameNumber === gameNumber) {
-          await this.bot.api.sendMessage(chatId,
-            `⏰ **下注倒计时：${seconds}秒！**\n\n` +
-            `👥 当前参与人数：${Object.keys(this.game.bets).length}\n` +
-            `💡 抓紧时间下注哦~`,
-            { parse_mode: 'Markdown' }
-          );
+        try {
+          if (this.game && this.game.state === GameState.Betting && this.game.gameNumber === gameNumber) {
+            await this.bot.api.sendMessage(chatId,
+              `⏰ **下注倒计时：${seconds}秒！**\n\n` +
+              `👥 当前参与人数：${Object.keys(this.game.bets).length}\n` +
+              `💡 抓紧时间下注哦~`,
+              { parse_mode: 'Markdown' }
+            );
+          }
+        } catch (error) {
+          console.error('Countdown message error:', error);
         }
       }, (30 - seconds) * 1000);
       this.timers.add(timer);
     });
 
     const autoProcessTimer = setTimeout(async () => {
-      if (this.game && this.game.state === GameState.Betting && this.game.gameNumber === gameNumber) {
-        await this.bot.api.sendMessage(chatId,
-          `⛔ **第 ${this.game.gameNumber} 局停止下注！**\n\n` +
-          `🎲 开始自动处理游戏...`,
-          { parse_mode: 'Markdown' }
-        );
-        await this.processGame();
+      try {
+        if (this.game && this.game.state === GameState.Betting && this.game.gameNumber === gameNumber) {
+          await this.bot.api.sendMessage(chatId,
+            `⛔ **第 ${this.game.gameNumber} 局停止下注！**\n\n` +
+            `🎲 开始自动处理游戏...`,
+            { parse_mode: 'Markdown' }
+          );
+          await this.processGame();
+        }
+      } catch (error) {
+        console.error('Auto process timer error:', error);
+        await this.cleanupGame();
       }
     }, BETTING_DURATION_MS);
     this.timers.add(autoProcessTimer);
   }
 
   async cleanupGame(): Promise<void> {
-    this.clearAllTimers();
-    this.game = null;
-    await this.state.storage.delete('game');
+    try {
+      this.clearAllTimers();
+      this.isProcessing = false;
+      this.game = null;
+      await this.state.storage.delete('game');
+      console.log('Game cleaned up successfully');
+    } catch (error) {
+      console.error('Cleanup game error:', error);
+    }
   }
 
   private clearAllTimers(): void {
@@ -323,24 +422,29 @@ export class GameService {
   }
 
   async getGameStatus(): Promise<GameStatusResponse> {
-    const autoGameEnabled = Boolean(await this.state.storage.get('autoGame'));
+    try {
+      const autoGameEnabled = Boolean(await this.state.storage.get('autoGame'));
 
-    if (!this.game) {
-      return { status: 'no_game', autoGameEnabled };
+      if (!this.game) {
+        return { status: 'no_game', autoGameEnabled };
+      }
+
+      const now = Date.now();
+      const timeRemaining = Math.max(0, Math.floor((this.game.bettingEndTime - now) / 1000));
+
+      return {
+        gameNumber: this.game.gameNumber,
+        state: this.game.state,
+        betsCount: Object.keys(this.game.bets).length,
+        bets: this.game.bets,
+        timeRemaining: this.game.state === GameState.Betting ? timeRemaining : 0,
+        result: this.game.result,
+        needsProcessing: this.game.state === GameState.Betting && now >= this.game.bettingEndTime,
+        autoGameEnabled
+      };
+    } catch (error) {
+      console.error('Get game status error:', error);
+      return { status: 'error', autoGameEnabled: false };
     }
-
-    const now = Date.now();
-    const timeRemaining = Math.max(0, Math.floor((this.game.bettingEndTime - now) / 1000));
-
-    return {
-      gameNumber: this.game.gameNumber,
-      state: this.game.state,
-      betsCount: Object.keys(this.game.bets).length,
-      bets: this.game.bets,
-      timeRemaining: this.game.state === GameState.Betting ? timeRemaining : 0,
-      result: this.game.result,
-      needsProcessing: this.game.state === GameState.Betting && now >= this.game.bettingEndTime,
-      autoGameEnabled
-    };
   }
 }
