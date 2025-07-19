@@ -1,5 +1,5 @@
 {
-  "name": "hono-grammy",
+  "name": "bc-services",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",

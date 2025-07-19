@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "hono-grammy",
+  "name": "bc-services",
   "main": "src/index.ts",
   "compatibility_date": "2025-07-19",
   "compatibility_flags": [
@@ -13,7 +13,7 @@
   "kv_namespaces": [
     {
       "binding": "BC_GAME_KV",
-      "id": "b70a5e9b12294dd8b68ee2336340bc6b"
+      "id": "89022f228643463a8c8a0459730d0141"
     }
   ],
   "observability": {
