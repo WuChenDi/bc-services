@@ -315,7 +315,7 @@ export class CommandHandlers {
 
       const betType = betTypeInput as BetType;
       const amount = parseInt(amountInput, 10);
-      
+
       if (isNaN(amount) || amount <= 0) {
         await ctx.reply('❌ 下注金额必须是大于0的数字');
         return;
@@ -347,13 +347,36 @@ export class CommandHandlers {
           [BetType.Tie]: '和局'
         };
 
-        await ctx.reply(
-          `✅ **${result.userName} 下注成功！**\n\n` +
-          `💰 ${betTypeText[result.betType!]} ${result.amount} 点\n` +
-          `👥 当前参与人数：${result.totalBets}\n` +
-          `⏰ 剩余时间：${result.remainingTime} 秒`,
-          { parse_mode: 'Markdown' }
-        );
+        let message = `✅ **${result.userName} 下注成功！**\n\n`;
+
+        if (result.isAccumulated) {
+          message += `💰 ${betTypeText[result.betType!]} ${result.previousAmount} + ${result.addedAmount} = **${result.amount} 点**\n`;
+          message += `📈 累加下注成功\n`;
+        } else if (result.isReplaced) {
+          const previousBetTypeText: Record<BetType, string> = {
+            [BetType.Banker]: '庄家',
+            [BetType.Player]: '闲家',
+            [BetType.Tie]: '和局'
+          };
+          message += `💰 从 ${previousBetTypeText[result.previousBetType!]} ${result.previousAmount}点\n`;
+          message += `📝 改为 ${betTypeText[result.betType!]} **${result.amount} 点**\n`;
+          message += `🔄 下注类型已更换\n`;
+        } else {
+          message += `💰 ${betTypeText[result.betType!]} **${result.amount} 点**\n`;
+          message += `🆕 首次下注\n`;
+        }
+
+        message += `👥 当前参与人数：${result.totalBets}\n`;
+        message += `⏰ 剩余时间：${result.remainingTime} 秒\n\n`;
+
+        // 🔥 添加下注提示
+        message += `💡 **下注规则:**\n`;
+        message += `• 相同类型重复下注会累加金额\n`;
+        message += `• 不同类型下注会替换之前的下注\n`;
+        message += `• 单人最大下注限制：10000点\n`;
+        message += `🎰 买定离手，不可取消！`;
+
+        await ctx.reply(message, { parse_mode: 'Markdown' });
       } else {
         await this.sendErrorMessage(ctx, result.error || '下注失败');
       }

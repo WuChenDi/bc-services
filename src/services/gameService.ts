@@ -85,18 +85,83 @@ export class GameService {
       return { success: false, error: 'Invalid bet parameters' };
     }
 
-    this.game.bets[userId] = { type: betType, amount, userName };
-    await this.state.storage.put('game', this.game);
+    // 检查用户是否已经下注
+    const existingBet = this.game.bets[userId];
 
-    const remainingTime = Math.max(0, Math.floor((this.game.bettingEndTime - now) / 1000));
-    return {
-      success: true,
-      betType,
-      amount,
-      userName,
-      remainingTime,
-      totalBets: Object.keys(this.game.bets).length
-    };
+    if (existingBet) {
+      // 如果已有下注，检查是否是相同类型
+      if (existingBet.type === betType) {
+        const newAmount = existingBet.amount + amount;
+
+        // 检查累加后是否超过限制
+        if (newAmount > 10000) {
+          return {
+            success: false,
+            error: `累加后金额${newAmount}点超过单次下注限制10000点\n当前已下注${existingBet.amount}点`
+          };
+        }
+
+        this.game.bets[userId] = {
+          type: betType,
+          amount: newAmount,
+          userName
+        };
+
+        await this.state.storage.put('game', this.game);
+
+        const remainingTime = Math.max(0, Math.floor((this.game.bettingEndTime - now) / 1000));
+        return {
+          success: true,
+          betType,
+          amount: newAmount,
+          userName,
+          remainingTime,
+          totalBets: Object.keys(this.game.bets).length,
+          isAccumulated: true,
+          previousAmount: existingBet.amount,
+          addedAmount: amount
+        };
+      } else {
+        this.game.bets[userId] = {
+          type: betType,
+          amount,
+          userName
+        };
+
+        await this.state.storage.put('game', this.game);
+
+        const remainingTime = Math.max(0, Math.floor((this.game.bettingEndTime - now) / 1000));
+        return {
+          success: true,
+          betType,
+          amount,
+          userName,
+          remainingTime,
+          totalBets: Object.keys(this.game.bets).length,
+          // 🔥 添加替换信息
+          isReplaced: true,
+          previousBetType: existingBet.type,
+          previousAmount: existingBet.amount
+        };
+      }
+    } else {
+      if (amount > 10000) {
+        return { success: false, error: '单次下注金额不能超过10000点' };
+      }
+
+      this.game.bets[userId] = { type: betType, amount, userName };
+      await this.state.storage.put('game', this.game);
+
+      const remainingTime = Math.max(0, Math.floor((this.game.bettingEndTime - now) / 1000));
+      return {
+        success: true,
+        betType,
+        amount,
+        userName,
+        remainingTime,
+        totalBets: Object.keys(this.game.bets).length
+      };
+    }
   }
 
   async processGame(): Promise<void> {
