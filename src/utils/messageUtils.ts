@@ -22,7 +22,13 @@ export function formatBetSummary(game: GameData): string {
   return message;
 }
 
-export function formatGameResult(game: GameData): string {
+export interface GameResultOptions {
+  isAutoGameEnabled?: boolean;
+  nextGameDelaySeconds?: number;  // 下一局开始的延迟秒数
+  totalGamesInSession?: number;   // 本次会话总游戏数
+}
+
+export function formatGameResult(game: GameData, options?: GameResultOptions): string {
   const winnerText = {
     [BetType.Banker]: '🏦 庄家胜！',
     [BetType.Player]: '👤 闲家胜！',
@@ -36,6 +42,8 @@ export function formatGameResult(game: GameData): string {
 
   const winners: string[] = [];
   const losers: string[] = [];
+  let totalWinAmount = 0;
+  let totalLossAmount = 0;
 
   Object.entries(game.bets).forEach(([userId, userBets]) => {
     const userName = userBets.userName;
@@ -49,9 +57,11 @@ export function formatGameResult(game: GameData): string {
           // 获胜
           const winAmount = betType === BetType.Tie ? amount * 8 : amount;
           userWinAmount += winAmount;
+          totalWinAmount += winAmount;
         } else {
           // 失败
           userLossAmount += amount;
+          totalLossAmount += amount;
         }
       }
     });
@@ -62,7 +72,6 @@ export function formatGameResult(game: GameData): string {
     } else if (netAmount < 0) {
       losers.push(`${userName}: ${netAmount}`);
     } else {
-      // 平手的情况（比如只下注了和局但没中，或者有下注但正好抵消）
       losers.push(`${userName}: ±0`);
     }
   });
@@ -74,7 +83,36 @@ export function formatGameResult(game: GameData): string {
     message += `❌ **失败者:**\n${losers.join('\n')}\n\n`;
   }
 
-  message += `🔄 **自动游戏模式：10秒后开始下一局**`;
+  // 🔥 添加本局统计信息
+  if (Object.keys(game.bets).length > 0) {
+    message += `📊 **本局统计:**\n`;
+    message += `💰 总赔付: ${totalWinAmount} 点\n`;
+    message += `💸 总收取: ${totalLossAmount} 点\n`;
+    message += `📈 庄家盈亏: ${totalLossAmount - totalWinAmount > 0 ? '+' : ''}${totalLossAmount - totalWinAmount} 点\n\n`;
+  }
+
+  // 🔥 动态游戏状态提示
+  const isAutoEnabled = options?.isAutoGameEnabled;
+  const delaySeconds = options?.nextGameDelaySeconds || 10;
+
+  if (isAutoEnabled === true) {
+    message += `🤖 **自动游戏模式进行中**\n`;
+    message += `⏰ ${delaySeconds}秒后自动开始下一局\n`;
+    message += `🛑 使用 /stopauto 关闭自动模式\n`;
+
+    if (options?.totalGamesInSession) {
+      message += `📊 本次已完成 ${options.totalGamesInSession} 局游戏`;
+    }
+  } else if (isAutoEnabled === false) {
+    message += `🎮 **手动游戏模式**\n`;
+    message += `💡 使用 /newgame 开始新游戏\n`;
+    message += `🤖 使用 /autogame 开启自动模式`;
+  } else {
+    // 兼容旧版本调用
+    message += `🎮 **游戏结束**\n`;
+    message += `💡 使用 /newgame 继续游戏`;
+  }
+
   return message;
 }
 

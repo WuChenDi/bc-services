@@ -373,7 +373,12 @@ export class GameService {
       this.saveGameRecordAsync();
 
       await sleep(1500);
-      this.sendMessageSafe(this.game.chatId, formatGameResult(this.game));
+
+      const autoGameEnabled = Boolean(await this.state.storage.get('autoGame'));
+      this.sendMessageSafe(this.game.chatId, formatGameResult(this.game, {
+        isAutoGameEnabled: autoGameEnabled,
+        nextGameDelaySeconds: this.constants.AUTO_GAME_INTERVAL_MS / 1000
+      }));
 
       this.isProcessing = false;
       await this.handleGameCompletion();
