@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "hono-grammy",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-07-19",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "vars": {
+    "BOT_TOKEN": "7998647566:AAHN5h3leAjwc-c17t9kgcvGaDoZeXZJ-HM",
+    // "WEBHOOK_SECRET": "可选的webhook密钥",
+    "ALLOWED_CHAT_IDS": "-1002509450778"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "GAME_KV",
+      "id": "1097446757fe40a7a0e28f218ee6f89d"
+    }
+  ],
+  // "triggers": {
+  //   "crons": [
+  //     "* * * * *"
+  //   ]
+  // },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "GAME_ROOMS",
+        "class_name": "BaccaratGameRoom"
+      }
+    ]
+  }
+}
