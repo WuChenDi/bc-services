@@ -33,5 +33,11 @@
         "class_name": "BaccaratGameRoom"
       }
     ]
-  }
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["BaccaratGameRoom"]
+    }
+  ]
 }
