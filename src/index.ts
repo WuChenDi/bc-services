@@ -1,7 +1,7 @@
 import { Bot, webhookCallback } from 'grammy';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { BetType, Env, GameState } from './types';
+import { BetType, Env, GameState, GameRecord } from './types';
 
 // 创建 Hono 应用
 const app = new Hono<{ Bindings: Env }>();
@@ -28,6 +28,12 @@ function createBot(token: string, gameRooms: DurableObjectNamespace) {
         `/process - 立即处理游戏\n` +
         `/status - 查看游戏状态\n` +
         `/stopgame - 停止当前游戏\n\n` +
+        `🤖 自动游戏:\n` +
+        `/autogame - 开启自动游戏模式\n` +
+        `/stopauto - 关闭自动游戏模式\n\n` +
+        `📊 游戏记录:\n` +
+        `/history - 查看最近10局记录\n` +
+        `/gameinfo <游戏编号> - 查看指定游戏详情\n\n` +
         `📋 其他命令:\n` +
         `/help - 查看帮助\n` +
         `/id - 获取群组ID`,
@@ -102,6 +108,72 @@ function createBot(token: string, gameRooms: DurableObjectNamespace) {
     } catch (error) {
       console.error('New game error:', error);
       await ctx.reply('❌ 创建游戏失败，请稍后再试');
+    }
+  });
+
+  // /autogame 命令
+  bot.command('autogame', async (ctx) => {
+    const chatId = ctx.chat?.id?.toString();
+    if (!chatId) return;
+
+    try {
+      const roomId = gameRooms.idFromName(chatId);
+      const room = gameRooms.get(roomId);
+
+      const response = await room.fetch(new Request('https://game.room/enable-auto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId })
+      }));
+
+      const result = await response.json() as any;
+
+      if (result.success) {
+        await ctx.reply(
+          `🤖 **自动游戏模式已开启！**\n\n` +
+          `🔄 游戏将持续自动进行\n` +
+          `⏰ 每局间隔10秒\n` +
+          `💡 即使无人下注也会继续发牌\n\n` +
+          `🛑 使用 /stopauto 关闭自动模式`,
+          { parse_mode: 'Markdown' }
+        );
+      } else {
+        await ctx.reply(`❌ ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Auto game error:', error);
+      await ctx.reply('❌ 开启自动游戏失败，请稍后再试');
+    }
+  });
+
+  // 🔥 新增：/stopauto 命令
+  bot.command('stopauto', async (ctx) => {
+    const chatId = ctx.chat?.id?.toString();
+    if (!chatId) return;
+
+    try {
+      const roomId = gameRooms.idFromName(chatId);
+      const room = gameRooms.get(roomId);
+
+      const response = await room.fetch(new Request('https://game.room/disable-auto', {
+        method: 'POST'
+      }));
+
+      const result = await response.json() as any;
+
+      if (result.success) {
+        await ctx.reply(
+          `🛑 **自动游戏模式已关闭**\n\n` +
+          `💡 使用 /newgame 手动开始游戏\n` +
+          `🤖 使用 /autogame 重新开启自动模式`,
+          { parse_mode: 'Markdown' }
+        );
+      } else {
+        await ctx.reply(`❌ ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Stop auto error:', error);
+      await ctx.reply('❌ 关闭自动游戏失败，请稍后再试');
     }
   });
 
@@ -199,7 +271,10 @@ function createBot(token: string, gameRooms: DurableObjectNamespace) {
       const result = await response.json() as any;
 
       if (result.status === 'no_game') {
-        return ctx.reply('❌ 当前没有进行中的游戏');
+        return ctx.reply(
+          `❌ 当前没有进行中的游戏\n\n` +
+          `🤖 自动游戏: ${result.autoGameEnabled ? '✅ 已开启' : '❌ 已关闭'}`
+        );
       }
 
       const stateText = {
@@ -213,6 +288,7 @@ function createBot(token: string, gameRooms: DurableObjectNamespace) {
       let message = `📊 **游戏状态 - 第 ${result.gameNumber} 局**\n\n`;
       message += `🎯 状态: ${stateText[result.state]}\n`;
       message += `👥 下注人数: ${result.betsCount}\n`;
+      message += `🤖 自动游戏: ${result.autoGameEnabled ? '✅ 已开启' : '❌ 已关闭'}\n`;
 
       if (result.state === GameState.Betting) {
         message += `⏰ 剩余时间: ${result.timeRemaining} 秒\n`;
@@ -236,6 +312,110 @@ function createBot(token: string, gameRooms: DurableObjectNamespace) {
     }
   });
 
+  // /history 命令
+  bot.command('history', async (ctx) => {
+    const chatId = ctx.chat?.id?.toString();
+    if (!chatId) return;
+
+    try {
+      const response = await fetch(`https://your-worker-domain.workers.dev/game-history/${chatId}`);
+      const result = await response.json() as any;
+
+      if (!result.success || !result.history || result.history.length === 0) {
+        return ctx.reply('📊 暂无游戏记录');
+      }
+
+      let message = `📊 **最近10局游戏记录**\n\n`;
+
+      result.history.forEach((record: GameRecord, index: number) => {
+        const winnerText = {
+          [BetType.Banker]: '🏦庄',
+          [BetType.Player]: '👤闲',
+          [BetType.Tie]: '🤝和'
+        };
+
+        const date = new Date(record.endTime);
+        const timeStr = date.toLocaleString('zh-CN', {
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
+        message += `${index + 1}. **${record.gameNumber}**\n`;
+        message += `   ${timeStr} | ${winnerText[record.result.winner!]} | ${record.result.banker}-${record.result.player} | ${record.totalBets}人\n\n`;
+      });
+
+      message += `💡 使用 /gameinfo <游戏编号> 查看详情`;
+
+      return ctx.reply(message, { parse_mode: 'Markdown' });
+    } catch (error) {
+      console.error('History error:', error);
+      return ctx.reply('❌ 获取历史记录失败，请稍后再试');
+    }
+  });
+
+  // /gameinfo 命令
+  bot.command('gameinfo', async (ctx) => {
+    const gameNumber = ctx.match?.trim();
+    if (!gameNumber) {
+      return ctx.reply('❌ 请提供游戏编号\n格式: /gameinfo 20250719123456789');
+    }
+
+    try {
+      const response = await fetch(`https://your-worker-domain.workers.dev/game-detail/${gameNumber}`);
+      const result = await response.json() as any;
+
+      if (!result.success || !result.game) {
+        return ctx.reply('❌ 未找到该游戏记录');
+      }
+
+      const game: GameRecord = result.game;
+      const winnerText = {
+        [BetType.Banker]: '🏦 庄家胜',
+        [BetType.Player]: '👤 闲家胜',
+        [BetType.Tie]: '🤝 和局'
+      };
+
+      const startTime = new Date(game.startTime).toLocaleString('zh-CN');
+      const endTime = new Date(game.endTime).toLocaleString('zh-CN');
+      const duration = Math.floor((game.endTime - game.startTime) / 1000);
+
+      let message = `🎯 **游戏详情 - ${game.gameNumber}**\n\n`;
+      message += `📅 开始时间: ${startTime}\n`;
+      message += `⏰ 结束时间: ${endTime}\n`;
+      message += `⏱️ 游戏时长: ${duration}秒\n\n`;
+
+      message += `🎲 **开牌结果:**\n`;
+      message += `🏦 庄家: ${game.cards.banker.join(' + ')} = ${game.result.banker}点\n`;
+      message += `👤 闲家: ${game.cards.player.join(' + ')} = ${game.result.player}点\n`;
+      message += `🏆 **${winnerText[game.result.winner!]}**\n\n`;
+
+      if (game.totalBets > 0) {
+        message += `💰 **下注情况:**\n`;
+        message += `👥 参与人数: ${game.totalBets}\n`;
+        message += `💵 总下注额: ${game.totalAmount}点\n\n`;
+
+        const betSummary = Object.values(game.bets).reduce((acc, bet) => {
+          acc[bet.type] = (acc[bet.type] || 0) + bet.amount;
+          return acc;
+        }, {} as Record<BetType, number>);
+
+        message += `📊 **分类下注:**\n`;
+        message += `🏦 庄家: ${betSummary[BetType.Banker] || 0}点\n`;
+        message += `👤 闲家: ${betSummary[BetType.Player] || 0}点\n`;
+        message += `🤝 和局: ${betSummary[BetType.Tie] || 0}点`;
+      } else {
+        message += `😔 **无人下注**`;
+      }
+
+      return ctx.reply(message, { parse_mode: 'Markdown' });
+    } catch (error) {
+      console.error('Game info error:', error);
+      return ctx.reply('❌ 获取游戏详情失败，请稍后再试');
+    }
+  });
+
   // /stopgame 命令
   bot.command('stopgame', async (ctx) => {
     const chatId = ctx.chat?.id?.toString();
@@ -252,7 +432,7 @@ function createBot(token: string, gameRooms: DurableObjectNamespace) {
       const result = await response.json() as any;
 
       if (result.success) {
-        await ctx.reply('🛑 游戏已停止');
+        await ctx.reply('🛑 游戏已停止，自动模式已关闭');
       } else {
         await ctx.reply(`❌ ${result.error}`);
       }
@@ -266,7 +446,7 @@ function createBot(token: string, gameRooms: DurableObjectNamespace) {
   bot.command('help', (ctx) => {
     return ctx.reply(
       `🎮 **百家乐 Bot 帮助**\n\n` +
-      `📋 **可用命令：**\n` +
+      `📋 **基础命令：**\n` +
       `/start - 启动机器人\n` +
       `/id - 获取群组和用户信息\n` +
       `/newgame - 开始新游戏\n` +
@@ -276,7 +456,13 @@ function createBot(token: string, gameRooms: DurableObjectNamespace) {
       `/process - 立即处理游戏\n` +
       `/status - 查看游戏状态\n` +
       `/stopgame - 停止当前游戏\n\n` +
-      `💡 游戏将在30秒后自动处理，无需手动触发`,
+      `🤖 **自动游戏：**\n` +
+      `/autogame - 开启自动游戏模式\n` +
+      `/stopauto - 关闭自动游戏模式\n\n` +
+      `📊 **游戏记录：**\n` +
+      `/history - 查看最近10局记录\n` +
+      `/gameinfo <编号> - 查看游戏详情\n\n` +
+      `💡 自动模式下游戏将持续进行，每局间隔10秒`,
       { parse_mode: 'Markdown' }
     );
   });
@@ -314,6 +500,70 @@ app.post('/webhook', async (c) => {
     console.error('Webhook error:', error);
     return c.json({
       error: 'Webhook processing failed',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+// 获取游戏历史记录 API
+app.get('/game-history/:chatId', async (c) => {
+  try {
+    const chatId = c.req.param('chatId');
+    const latestGamesKey = `latest_games:${chatId}`;
+
+    const latestGamesData = await c.env.GAME_KV.get(latestGamesKey);
+    if (!latestGamesData) {
+      return c.json({ success: true, history: [] });
+    }
+
+    const latestGames: string[] = JSON.parse(latestGamesData);
+    const history: GameRecord[] = [];
+
+    // 获取最近10局的详细信息
+    for (const gameNumber of latestGames.slice(0, 10)) {
+      try {
+        const gameData = await c.env.GAME_KV.get(`game:${gameNumber}`);
+        if (gameData) {
+          history.push(JSON.parse(gameData));
+        }
+      } catch (e) {
+        console.error(`Failed to get game ${gameNumber}:`, e);
+      }
+    }
+
+    return c.json({
+      success: true,
+      history,
+      total: latestGames.length
+    });
+  } catch (error) {
+    console.error('Game history error:', error);
+    return c.json({
+      error: 'Failed to get game history',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+// 获取指定游戏详情 API
+app.get('/game-detail/:gameNumber', async (c) => {
+  try {
+    const gameNumber = c.req.param('gameNumber');
+    const gameData = await c.env.GAME_KV.get(`game:${gameNumber}`);
+
+    if (!gameData) {
+      return c.json({ success: false, error: 'Game not found' });
+    }
+
+    const game: GameRecord = JSON.parse(gameData);
+    return c.json({
+      success: true,
+      game
+    });
+  } catch (error) {
+    console.error('Game detail error:', error);
+    return c.json({
+      error: 'Failed to get game detail',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }
@@ -363,6 +613,50 @@ app.post('/auto-game/:chatId', async (c) => {
     console.error('Auto game error:', error);
     return c.json({
       error: 'Failed to start auto game',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+// 启用自动游戏 API
+app.post('/enable-auto/:chatId', async (c) => {
+  try {
+    const chatId = c.req.param('chatId');
+    const roomId = c.env.GAME_ROOMS.idFromName(chatId);
+    const room = c.env.GAME_ROOMS.get(roomId);
+
+    const response = await room.fetch(new Request('https://game.room/enable-auto', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId })
+    }));
+
+    return response;
+  } catch (error) {
+    console.error('Enable auto error:', error);
+    return c.json({
+      error: 'Failed to enable auto game',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
+// 禁用自动游戏 API
+app.post('/disable-auto/:chatId', async (c) => {
+  try {
+    const chatId = c.req.param('chatId');
+    const roomId = c.env.GAME_ROOMS.idFromName(chatId);
+    const room = c.env.GAME_ROOMS.get(roomId);
+
+    const response = await room.fetch(new Request('https://game.room/disable-auto', {
+      method: 'POST'
+    }));
+
+    return response;
+  } catch (error) {
+    console.error('Disable auto error:', error);
+    return c.json({
+      error: 'Failed to disable auto game',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
   }

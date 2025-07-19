@@ -1,11 +1,12 @@
 import { Bot } from 'grammy';
-import { BetType, Env, GameData, GameState } from './types';
+import { BetType, Env, GameData, GameState, GameRecord } from './types';
 
 export class BaccaratGameRoom {
   private state: DurableObjectState;
   private env: Env;
   private game: GameData | null = null;
-  private timers: Set<any> = new Set(); // 🔥 管理所有定时器
+  private timers: Set<any> = new Set(); // 管理所有定时器
+  private autoGameEnabled: boolean = false; // 自动游戏开关
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -19,6 +20,7 @@ export class BaccaratGameRoom {
       // 从存储中恢复游戏状态
       if (!this.game) {
         this.game = await this.state.storage.get('game') || null;
+        this.autoGameEnabled = await this.state.storage.get('autoGame') || false;
       }
 
       switch (url.pathname) {
@@ -32,6 +34,10 @@ export class BaccaratGameRoom {
           return this.handleGetStatus();
         case '/stop-game':
           return this.handleStopGame();
+        case '/enable-auto':
+          return this.handleEnableAuto(request);
+        case '/disable-auto':
+          return this.handleDisableAuto();
         default:
           return new Response('Not Found', { status: 404 });
       }
@@ -43,9 +49,9 @@ export class BaccaratGameRoom {
 
   async handleStartGame(request: Request): Promise<Response> {
     if (this.game && this.game.state !== GameState.Finished) {
-      return Response.json({ 
-        success: false, 
-        error: 'Game already in progress' 
+      return Response.json({
+        success: false,
+        error: 'Game already in progress'
       });
     }
 
@@ -55,12 +61,12 @@ export class BaccaratGameRoom {
         return Response.json({ success: false, error: 'chatId is required' });
       }
 
-      // 🔥 清理旧定时器
+      // 清理旧定时器
       this.clearAllTimers();
 
       const gameNumber = this.generateGameNumber();
       const now = Date.now();
-      
+
       this.game = {
         gameNumber,
         state: GameState.Betting,
@@ -73,8 +79,8 @@ export class BaccaratGameRoom {
       };
 
       await this.state.storage.put('game', this.game);
-      
-      // 🔥 设置定时器
+
+      // 设置定时器
       this.setupCountdownTimers(chatId, gameNumber);
 
       return Response.json({
@@ -84,17 +90,88 @@ export class BaccaratGameRoom {
       });
     } catch (error) {
       console.error('Start game error:', error);
-      return Response.json({ 
-        success: false, 
-        error: 'Failed to start game' 
+      return Response.json({
+        success: false,
+        error: 'Failed to start game'
       });
+    }
+  }
+
+  // 启用自动游戏
+  async handleEnableAuto(request: Request): Promise<Response> {
+    try {
+      const { chatId } = await request.json();
+      if (!chatId) {
+        return Response.json({ success: false, error: 'chatId is required' });
+      }
+
+      this.autoGameEnabled = true;
+      await this.state.storage.put('autoGame', true);
+
+      // 如果当前没有游戏，立即开始一局
+      if (!this.game || this.game.state === GameState.Finished) {
+        await this.startAutoGame(chatId);
+      }
+
+      return Response.json({ success: true, message: 'Auto game enabled' });
+    } catch (error) {
+      console.error('Enable auto error:', error);
+      return Response.json({ success: false, error: 'Failed to enable auto game' });
+    }
+  }
+
+  // 禁用自动游戏
+  async handleDisableAuto(): Promise<Response> {
+    try {
+      this.autoGameEnabled = false;
+      await this.state.storage.put('autoGame', false);
+
+      return Response.json({ success: true, message: 'Auto game disabled' });
+    } catch (error) {
+      console.error('Disable auto error:', error);
+      return Response.json({ success: false, error: 'Failed to disable auto game' });
+    }
+  }
+
+  // 🔥 新增：开始自动游戏
+  private async startAutoGame(chatId: string) {
+    try {
+      const gameNumber = this.generateGameNumber();
+      const now = Date.now();
+
+      this.game = {
+        gameNumber,
+        state: GameState.Betting,
+        bets: {},
+        cards: { banker: [], player: [] },
+        result: { banker: 0, player: 0, winner: null },
+        startTime: now,
+        bettingEndTime: now + 30000,
+        chatId
+      };
+
+      await this.state.storage.put('game', this.game);
+
+      const bot = this.createBot();
+      await bot.api.sendMessage(chatId,
+        `🤖 **自动游戏 - 第 ${gameNumber} 局开始！**\n\n` +
+        `💰 下注时间：30秒\n` +
+        `📝 下注格式：/bet banker 100\n` +
+        `⏰ 30秒后将自动处理游戏...\n` +
+        `🔄 游戏将持续自动进行`,
+        { parse_mode: 'Markdown' }
+      );
+
+      this.setupCountdownTimers(chatId, gameNumber);
+    } catch (error) {
+      console.error('Start auto game error:', error);
     }
   }
 
   // 🔥 修复定时器管理
   private setupCountdownTimers(chatId: string, gameNumber: string) {
     const intervals = [20, 10, 5];
-    
+
     intervals.forEach(seconds => {
       const timer = setTimeout(async () => {
         if (this.game && this.game.state === GameState.Betting && this.game.gameNumber === gameNumber) {
@@ -117,8 +194,8 @@ export class BaccaratGameRoom {
     try {
       const bot = this.createBot();
       const betsCount = this.game ? Object.keys(this.game.bets).length : 0;
-      
-      await bot.api.sendMessage(chatId, 
+
+      await bot.api.sendMessage(chatId,
         `⏰ **下注倒计时：${seconds}秒！**\n\n` +
         `👥 当前参与人数：${betsCount}\n` +
         `💡 抓紧时间下注哦~`,
@@ -136,7 +213,7 @@ export class BaccaratGameRoom {
 
     try {
       const bot = this.createBot();
-      await bot.api.sendMessage(chatId, 
+      await bot.api.sendMessage(chatId,
         `⛔ **第 ${this.game.gameNumber} 局停止下注！**\n\n` +
         `🎲 开始自动处理游戏...`,
         { parse_mode: 'Markdown' }
@@ -146,7 +223,7 @@ export class BaccaratGameRoom {
     } catch (error) {
       console.error('Auto process error:', error);
       try {
-        await this.createBot().api.sendMessage(chatId, 
+        await this.createBot().api.sendMessage(chatId,
           '❌ 自动处理游戏失败，请联系管理员'
         );
       } catch (e) {
@@ -157,17 +234,17 @@ export class BaccaratGameRoom {
 
   async handlePlaceBet(request: Request): Promise<Response> {
     if (!this.game || this.game.state !== GameState.Betting) {
-      return Response.json({ 
-        success: false, 
-        error: 'No active betting game' 
+      return Response.json({
+        success: false,
+        error: 'No active betting game'
       });
     }
 
     const now = Date.now();
     if (now > this.game.bettingEndTime) {
-      return Response.json({ 
-        success: false, 
-        error: 'Betting time ended' 
+      return Response.json({
+        success: false,
+        error: 'Betting time ended'
       });
     }
 
@@ -175,9 +252,9 @@ export class BaccaratGameRoom {
       const { userId, userName, betType, amount } = await request.json();
 
       if (!Object.values(BetType).includes(betType) || amount <= 0 || !userId) {
-        return Response.json({ 
-          success: false, 
-          error: 'Invalid bet parameters' 
+        return Response.json({
+          success: false,
+          error: 'Invalid bet parameters'
         });
       }
 
@@ -196,9 +273,9 @@ export class BaccaratGameRoom {
       });
     } catch (error) {
       console.error('Place bet error:', error);
-      return Response.json({ 
-        success: false, 
-        error: 'Failed to place bet' 
+      return Response.json({
+        success: false,
+        error: 'Failed to place bet'
       });
     }
   }
@@ -210,22 +287,23 @@ export class BaccaratGameRoom {
       this.game.state = GameState.Processing;
       await this.state.storage.put('game', this.game);
 
-      // 🔥 清理定时器
+      // 清理定时器
       this.clearAllTimers();
 
       const betsCount = Object.keys(this.game.bets).length;
+
+      // 即使没有人下注也继续游戏
       if (betsCount === 0) {
         await bot.api.sendMessage(this.game.chatId,
           `😔 **第 ${this.game.gameNumber} 局无人下注**\n\n` +
-          `🎮 游戏结束，使用 /newgame 开始新游戏`,
+          `🎲 但游戏继续进行，开始发牌...`,
           { parse_mode: 'Markdown' }
         );
-        await this.cleanupGame();
-        return;
+      } else {
+        await this.showBetSummary(bot);
+        await this.sleep(3000);
       }
 
-      await this.showBetSummary(bot);
-      await this.sleep(3000);
       await this.startRevealing(bot);
     } catch (error) {
       console.error('Process game error:', error);
@@ -237,41 +315,41 @@ export class BaccaratGameRoom {
     }
   }
 
-  // 🔥 修复：完全使用 Telegram 骰子返回的点数
+  // 使用 Telegram 骰子返回的点数
   private async rollDice(bot: Bot, chatId: string, playerType: string, cardIndex: number): Promise<number> {
     try {
       // 发送骰子，Telegram 会返回真实的点数
       const diceMessage = await bot.api.sendDice(chatId, '🎲');
-      
-      // 🔥 关键：使用 Telegram 返回的真实点数
+
+      // 使用 Telegram 返回的真实点数
       const actualDiceValue = diceMessage.dice?.value;
-      
+
       if (!actualDiceValue) {
         throw new Error('Failed to get dice value from Telegram');
       }
-      
+
       // 等待骰子动画播放完毕
-      await this.sleep(3000);
-      
+      await this.sleep(5000);
+
       // 发送确认消息，显示 Telegram 返回的真实点数
-      await bot.api.sendMessage(chatId, 
+      await bot.api.sendMessage(chatId,
         `${playerType === 'banker' ? '🏦 庄家' : '👤 闲家'}第${cardIndex}张牌: **${actualDiceValue} 点**`,
         { parse_mode: 'Markdown' }
       );
-      
-      return actualDiceValue; // 🔥 返回 Telegram 的真实点数
-      
+
+      return actualDiceValue; // 返回 Telegram 的真实点数
+
     } catch (error) {
       console.error('Roll dice error:', error);
       // 只有在 API 完全失败时才使用备用方案
-      await bot.api.sendMessage(chatId, 
+      await bot.api.sendMessage(chatId,
         '❌ 骰子发送失败，请重新开始游戏'
       );
       throw error; // 抛出错误，让游戏处理失败情况
     }
   }
 
-  // 🔥 修复：开牌流程完全依赖 Telegram 骰子
+  // 开牌流程完全依赖 Telegram 骰子
   private async startRevealing(bot: Bot) {
     if (!this.game) return;
 
@@ -285,17 +363,17 @@ export class BaccaratGameRoom {
     );
 
     try {
-      // 发前两张牌 - 🔥 完全使用 Telegram 骰子返回值
+      // 发前两张牌
       for (let i = 0; i < 2; i++) {
         await this.sleep(1000);
-        
-        // 庄家牌 - 使用 Telegram 骰子真实点数
+
+        // 庄家牌
         const bankerCard = await this.rollDice(bot, this.game.chatId, 'banker', i + 1);
         this.game.cards.banker.push(bankerCard);
 
         await this.sleep(1000);
-        
-        // 闲家牌 - 使用 Telegram 骰子真实点数
+
+        // 闲家牌
         const playerCard = await this.rollDice(bot, this.game.chatId, 'player', i + 1);
         this.game.cards.player.push(playerCard);
       }
@@ -316,7 +394,7 @@ export class BaccaratGameRoom {
       await this.sleep(3000);
 
       if (bankerSum >= 8 || playerSum >= 8) {
-        await bot.api.sendMessage(this.game.chatId, 
+        await bot.api.sendMessage(this.game.chatId,
           '🎯 **天牌！无需补牌！**',
           { parse_mode: 'Markdown' }
         );
@@ -325,17 +403,17 @@ export class BaccaratGameRoom {
       }
 
       await this.calculateResult(bot);
-      
+
     } catch (error) {
       console.error('Revealing error:', error);
-      await bot.api.sendMessage(this.game.chatId, 
+      await bot.api.sendMessage(this.game.chatId,
         '❌ 开牌过程失败，游戏终止。请使用 /newgame 重新开始'
       );
       await this.cleanupGame();
     }
   }
 
-  // 🔥 修复：第三张牌也使用 Telegram 骰子
+  // 补牌操作
   private async handleThirdCard(bot: Bot, bankerSum: number, playerSum: number) {
     if (!this.game) return;
 
@@ -343,7 +421,7 @@ export class BaccaratGameRoom {
 
     if (playerSum <= 5) {
       await this.sleep(2000);
-      await bot.api.sendMessage(this.game.chatId, 
+      await bot.api.sendMessage(this.game.chatId,
         '👤 **闲家需要补牌...**',
         { parse_mode: 'Markdown' }
       );
@@ -366,7 +444,7 @@ export class BaccaratGameRoom {
 
     if (bankerNeedCard) {
       await this.sleep(2000);
-      await bot.api.sendMessage(this.game.chatId, 
+      await bot.api.sendMessage(this.game.chatId,
         '🏦 **庄家需要补牌...**',
         { parse_mode: 'Markdown' }
       );
@@ -398,6 +476,9 @@ export class BaccaratGameRoom {
 
     this.game.state = GameState.Finished;
     await this.state.storage.put('game', this.game);
+
+    // 保存游戏记录到 KV
+    await this.saveGameRecord();
 
     await this.sleep(3000);
 
@@ -431,25 +512,86 @@ export class BaccaratGameRoom {
       resultMessage += `❌ **失败者:**\n${losers.join('\n')}\n\n`;
     }
 
-    resultMessage += `⏰ 游戏结束，使用 /newgame 开始下一局`;
+    // 根据自动游戏状态显示不同信息
+    if (this.autoGameEnabled) {
+      resultMessage += `🔄 **自动游戏模式：10秒后开始下一局**`;
+
+      // 10秒后自动开始下一局
+      const nextGameTimer = setTimeout(async () => {
+        if (this.autoGameEnabled) {
+          await this.startAutoGame(this.game!.chatId);
+        }
+      }, 10000);
+      this.timers.add(nextGameTimer);
+    } else {
+      resultMessage += `⏰ 游戏结束，使用 /newgame 开始下一局`;
+    }
 
     await bot.api.sendMessage(this.game.chatId, resultMessage, { parse_mode: 'Markdown' });
 
-    // 30秒后清理数据
-    const cleanupTimer = setTimeout(async () => {
-      await this.cleanupGame();
-    }, 30000);
-    this.timers.add(cleanupTimer);
+    // 如果不是自动模式，30秒后清理数据
+    if (!this.autoGameEnabled) {
+      const cleanupTimer = setTimeout(async () => {
+        await this.cleanupGame();
+      }, 30000);
+      this.timers.add(cleanupTimer);
+    }
   }
 
-  // 🔥 修复清理函数
+  // 保存游戏记录到 KV
+  private async saveGameRecord() {
+    if (!this.game) return;
+
+    try {
+      const gameRecord: GameRecord = {
+        gameNumber: this.game.gameNumber,
+        startTime: this.game.startTime,
+        endTime: Date.now(),
+        chatId: this.game.chatId,
+        bets: this.game.bets,
+        cards: this.game.cards,
+        result: this.game.result,
+        totalBets: Object.keys(this.game.bets).length,
+        totalAmount: Object.values(this.game.bets).reduce((sum, bet) => sum + bet.amount, 0)
+      };
+
+      // 保存到 KV，使用游戏编号作为 key
+      await this.env.GAME_KV.put(`game:${this.game.gameNumber}`, JSON.stringify(gameRecord));
+
+      // 更新最新游戏列表（保留最近100局）
+      const latestGamesKey = `latest_games:${this.game.chatId}`;
+      let latestGames: string[] = [];
+
+      try {
+        const existing = await this.env.GAME_KV.get(latestGamesKey);
+        if (existing) {
+          latestGames = JSON.parse(existing);
+        }
+      } catch (e) {
+        console.error('Failed to get latest games:', e);
+      }
+
+      latestGames.unshift(this.game.gameNumber);
+      if (latestGames.length > 100) {
+        latestGames = latestGames.slice(0, 100);
+      }
+
+      await this.env.GAME_KV.put(latestGamesKey, JSON.stringify(latestGames));
+
+      console.log(`Game record saved: ${this.game.gameNumber}`);
+    } catch (error) {
+      console.error('Failed to save game record:', error);
+    }
+  }
+
+  // 修复清理函数
   private async cleanupGame() {
     this.clearAllTimers();
     this.game = null;
     await this.state.storage.delete('game');
   }
 
-  // 🔥 新增定时器管理
+  // 新增定时器管理
   private clearAllTimers() {
     this.timers.forEach(timer => clearTimeout(timer));
     this.timers.clear();
@@ -468,7 +610,7 @@ export class BaccaratGameRoom {
     return `${dateStr}${timeStr}${randomStr}`;
   }
 
-  // 🔥 百家乐计分规则 - 使用骰子点数
+  // 百家乐计分规则
   private calculatePoints(cards: number[]): number {
     // 在真正的百家乐中，10/J/Q/K 都算0点
     // 但我们用骰子(1-6)，所以直接相加然后取个位数
@@ -502,7 +644,10 @@ export class BaccaratGameRoom {
 
   async handleGetStatus(): Promise<Response> {
     if (!this.game) {
-      return Response.json({ status: 'no_game' });
+      return Response.json({
+        status: 'no_game',
+        autoGameEnabled: this.autoGameEnabled
+      });
     }
 
     const now = Date.now();
@@ -515,15 +660,16 @@ export class BaccaratGameRoom {
       bets: this.game.bets,
       timeRemaining: this.game.state === GameState.Betting ? timeRemaining : 0,
       result: this.game.result,
-      needsProcessing: this.game.state === GameState.Betting && now >= this.game.bettingEndTime
+      needsProcessing: this.game.state === GameState.Betting && now >= this.game.bettingEndTime,
+      autoGameEnabled: this.autoGameEnabled
     });
   }
 
   async handleProcessGame(): Promise<Response> {
     if (!this.game || this.game.state !== GameState.Betting) {
-      return Response.json({ 
-        success: false, 
-        error: 'No active betting game' 
+      return Response.json({
+        success: false,
+        error: 'No active betting game'
       });
     }
 
@@ -533,9 +679,9 @@ export class BaccaratGameRoom {
       return Response.json({ success: true });
     } catch (error) {
       console.error('Handle process game error:', error);
-      return Response.json({ 
-        success: false, 
-        error: 'Failed to process game' 
+      return Response.json({
+        success: false,
+        error: 'Failed to process game'
       });
     }
   }
@@ -547,18 +693,23 @@ export class BaccaratGameRoom {
 
     try {
       const chatId = this.game.chatId;
+
+      // 🔥 停止自动游戏
+      this.autoGameEnabled = false;
+      await this.state.storage.put('autoGame', false);
+
       await this.cleanupGame();
-      
-      await this.createBot().api.sendMessage(chatId, 
-        '🛑 游戏已停止'
+
+      await this.createBot().api.sendMessage(chatId,
+        '🛑 游戏已停止，自动模式已关闭'
       );
-      
+
       return Response.json({ success: true });
     } catch (error) {
       console.error('Handle stop game error:', error);
-      return Response.json({ 
-        success: false, 
-        error: 'Failed to stop game' 
+      return Response.json({
+        success: false,
+        error: 'Failed to stop game'
       });
     }
   }

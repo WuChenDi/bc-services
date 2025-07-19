@@ -3,6 +3,7 @@ export interface Env {
   WEBHOOK_SECRET?: string;
   ALLOWED_CHAT_IDS?: string;
   GAME_ROOMS: DurableObjectNamespace;
+  GAME_KV: KVNamespace;
 }
 
 export enum GameState {
@@ -35,4 +36,23 @@ export interface GameData {
   startTime: number;
   bettingEndTime: number;
   chatId: string;
+}
+
+export interface GameRecord {
+  gameNumber: string;
+  startTime: number;
+  endTime: number;
+  chatId: string;
+  bets: { [userId: string]: { type: BetType; amount: number; userName: string } };
+  cards: {
+    banker: number[];
+    player: number[];
+  };
+  result: {
+    banker: number;
+    player: number;
+    winner: BetType | null;
+  };
+  totalBets: number;
+  totalAmount: number;
 }
