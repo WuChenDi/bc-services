@@ -1,4 +1,4 @@
-import type { GameRecord, GameData } from '@/types';
+import type { GameRecord, GameData, BetType } from '@/types';
 
 export class StorageService {
   constructor(private kv: KVNamespace) { }
@@ -6,12 +6,21 @@ export class StorageService {
   async saveGameRecord(game: GameData): Promise<void> {
     try {
       const { bettingEndTime, ...gameWithoutBettingEndTime } = game;
-      
+
+      const allUserBets = Object.values(game.bets);
+      let totalAmount = 0;
+
+      allUserBets.forEach(userBets => {
+        if (userBets.banker) totalAmount += userBets.banker;
+        if (userBets.player) totalAmount += userBets.player;
+        if (userBets.tie) totalAmount += userBets.tie;
+      });
+
       const gameRecord: GameRecord = {
         ...gameWithoutBettingEndTime,
         endTime: Date.now(),
-        totalBets: Object.keys(game.bets).length,
-        totalAmount: Object.values(game.bets).reduce((sum, bet) => sum + bet.amount, 0)
+        totalBets: allUserBets.length,
+        totalAmount
       };
 
       await this.kv.put(`game:${game.gameNumber}`, JSON.stringify(gameRecord));

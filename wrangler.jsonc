@@ -7,8 +7,24 @@
     "nodejs_compat"
   ],
   "vars": {
+    // 基础配置
     "BOT_TOKEN": "7998647566:AAHN5h3leAjwc-c17t9kgcvGaDoZeXZJ-HM",
-    "ALLOWED_CHAT_IDS": "-1002509450778"
+    "ALLOWED_CHAT_IDS": "-1002509450778",
+    // ===== 游戏时间配置 =====
+    // 🎮 核心游戏时间
+    "BETTING_DURATION_MS": "30000", // 下注阶段持续时间 (30秒) - 用户下注的总时长
+    "AUTO_GAME_INTERVAL_MS": "10000", // 自动游戏间隔时间 (10秒) - 每局游戏结束后到下一局开始的等待时间
+    // 🎲 骰子相关时间
+    "DICE_ROLL_TIMEOUT_MS": "10000", // 骰子投掷超时 (10秒) - 单次骰子API调用的最大等待时间
+    "DICE_ROLL_MAX_RETRIES": "2", // 骰子投掷最大重试次数 - 失败后重试的次数
+    "DICE_ANIMATION_WAIT_MS": "4000", // 骰子动画等待时间 (4秒) - 等待骰子动画播放完成的时间
+    "DICE_RESULT_DELAY_MS": "1000", // 结果发送延迟 (1秒) - 发送点数结果后的停顿时间
+    // ⏱️ 流程控制时间
+    "CARD_DEAL_DELAY_MS": "500", // 发牌间隔 (0.5秒) - 每张牌之间的等待时间，让用户看清楚发牌过程
+    "MESSAGE_DELAY_MS": "2000", // 消息发送间隔 (2秒) - 重要消息之间的间隔，避免刷屏
+    // 🔒 系统保护时间
+    "GLOBAL_PROCESS_TIMEOUT_MS": "90000", // 游戏处理全局超时 (90秒) - 整个游戏处理的最大时长，防止卡死
+    "CLEANUP_DELAY_MS": "30000" // 清理延迟时间 (30秒) - 游戏结束后多久开始清理资源
   },
   "kv_namespaces": [
     {
@@ -31,7 +47,9 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["BaccaratGameRoom"]
+      "new_sqlite_classes": [
+        "BaccaratGameRoom"
+      ]
     }
   ]
 }

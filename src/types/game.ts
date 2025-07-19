@@ -12,16 +12,17 @@ export enum BetType {
   Tie = 'tie'
 }
 
-export interface BetInfo {
-  type: BetType;
-  amount: number;
+export interface UserBets {
+  banker?: number;
+  player?: number;
+  tie?: number;
   userName: string;
 }
 
 export interface GameData {
   gameNumber: string;
   state: GameState;
-  bets: { [userId: string]: BetInfo };
+  bets: { [userId: string]: UserBets };
   cards: {
     banker: number[];
     player: number[];

@@ -1,4 +1,4 @@
-import { BetType, GameState, type BetInfo } from './game';
+import { BetType, GameState, type UserBets } from './game';
 
 export interface StartGameRequest {
   chatId: string;
@@ -20,7 +20,7 @@ export interface GameStatusResponse {
   gameNumber?: string;
   state?: GameState;
   betsCount?: number;
-  bets?: { [userId: string]: BetInfo };
+  bets?: { [userId: string]: UserBets };
   timeRemaining?: number;
   result?: {
     banker: number;
@@ -40,10 +40,8 @@ export interface PlaceBetResponse {
   totalBets?: number;
   error?: string;
   isAccumulated?: boolean;      // 是否为累加下注
-  isReplaced?: boolean;         // 是否为替换下注
   previousAmount?: number;      // 之前的金额
   addedAmount?: number;         // 新增的金额
-  previousBetType?: BetType;    // 之前的下注类型
 }
 
 export interface StartGameResponse {

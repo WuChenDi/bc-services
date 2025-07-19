@@ -1,15 +1,19 @@
-import { type GameData, type GameRecord, BetType } from '@/types'; 
+import { type GameData, type GameRecord, BetType, type UserBets } from '@/types';
 
 export function formatBetSummary(game: GameData): string {
-  const bets = Object.values(game.bets);
-  const betSummary = bets.reduce((acc, bet) => {
-    acc[bet.type] = (acc[bet.type] || 0) + bet.amount;
+  const allUserBets = Object.values(game.bets);
+  const betSummary = allUserBets.reduce((acc, userBets) => {
+    if (userBets.banker) acc[BetType.Banker] = (acc[BetType.Banker] || 0) + userBets.banker;
+    if (userBets.player) acc[BetType.Player] = (acc[BetType.Player] || 0) + userBets.player;
+    if (userBets.tie) acc[BetType.Tie] = (acc[BetType.Tie] || 0) + userBets.tie;
     return acc;
   }, {} as Record<BetType, number>);
 
+  const totalAmount = Object.values(betSummary).reduce((sum, amount) => sum + (amount || 0), 0);
+
   let message = `📋 **第 ${game.gameNumber} 局下注汇总**\n\n`;
-  message += `👥 参与人数: ${bets.length}\n`;
-  message += `💰 总下注: ${bets.reduce((sum, bet) => sum + bet.amount, 0)} 点\n\n`;
+  message += `👥 参与人数: ${allUserBets.length}\n`;
+  message += `💰 总下注: ${totalAmount} 点\n\n`;
   message += `📊 **各项下注:**\n`;
   message += `🏦 庄家: ${betSummary[BetType.Banker] || 0} 点\n`;
   message += `👤 闲家: ${betSummary[BetType.Player] || 0} 点\n`;
@@ -33,12 +37,33 @@ export function formatGameResult(game: GameData): string {
   const winners: string[] = [];
   const losers: string[] = [];
 
-  Object.entries(game.bets).forEach(([userId, bet]) => {
-    if (bet.type === game.result.winner) {
-      const winAmount = bet.type === BetType.Tie ? bet.amount * 8 : bet.amount;
-      winners.push(`${bet.userName}: +${winAmount}`);
+  Object.entries(game.bets).forEach(([userId, userBets]) => {
+    const userName = userBets.userName;
+    let userWinAmount = 0;
+    let userLossAmount = 0;
+
+    // 计算每个用户的输赢
+    Object.entries(userBets).forEach(([betType, amount]) => {
+      if (betType !== 'userName' && typeof amount === 'number') {
+        if (betType === game.result.winner) {
+          // 获胜
+          const winAmount = betType === BetType.Tie ? amount * 8 : amount;
+          userWinAmount += winAmount;
+        } else {
+          // 失败
+          userLossAmount += amount;
+        }
+      }
+    });
+
+    const netAmount = userWinAmount - userLossAmount;
+    if (netAmount > 0) {
+      winners.push(`${userName}: +${netAmount}`);
+    } else if (netAmount < 0) {
+      losers.push(`${userName}: ${netAmount}`);
     } else {
-      losers.push(`${bet.userName}: -${bet.amount}`);
+      // 平手的情况（比如只下注了和局但没中，或者有下注但正好抵消）
+      losers.push(`${userName}: ±0`);
     }
   });
 
@@ -105,8 +130,12 @@ export function formatGameInfo(game: GameRecord): string {
     message += `👥 参与人数: ${game.totalBets}\n`;
     message += `💵 总下注额: ${game.totalAmount}点\n\n`;
 
-    const betSummary = Object.values(game.bets).reduce((acc, bet) => {
-      acc[bet.type] = (acc[bet.type] || 0) + bet.amount;
+    // 🔥 更新下注汇总计算
+    const allUserBets = Object.values(game.bets);
+    const betSummary = allUserBets.reduce((acc, userBets) => {
+      if (userBets.banker) acc[BetType.Banker] = (acc[BetType.Banker] || 0) + userBets.banker;
+      if (userBets.player) acc[BetType.Player] = (acc[BetType.Player] || 0) + userBets.player;
+      if (userBets.tie) acc[BetType.Tie] = (acc[BetType.Tie] || 0) + userBets.tie;
       return acc;
     }, {} as Record<BetType, number>);
 
