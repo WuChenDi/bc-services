@@ -3,7 +3,7 @@ export interface Env {
   WEBHOOK_SECRET?: string;
   ALLOWED_CHAT_IDS?: string;
   GAME_ROOMS: DurableObjectNamespace;
-  GAME_KV: KVNamespace;
+  BC_GAME_KV: KVNamespace;
 }
 
 export enum GameState {

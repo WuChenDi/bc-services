@@ -511,7 +511,7 @@ app.get('/game-history/:chatId', async (c) => {
     const chatId = c.req.param('chatId');
     const latestGamesKey = `latest_games:${chatId}`;
 
-    const latestGamesData = await c.env.GAME_KV.get(latestGamesKey);
+    const latestGamesData = await c.env.BC_GAME_KV.get(latestGamesKey);
     if (!latestGamesData) {
       return c.json({ success: true, history: [] });
     }
@@ -522,7 +522,7 @@ app.get('/game-history/:chatId', async (c) => {
     // 获取最近10局的详细信息
     for (const gameNumber of latestGames.slice(0, 10)) {
       try {
-        const gameData = await c.env.GAME_KV.get(`game:${gameNumber}`);
+        const gameData = await c.env.BC_GAME_KV.get(`game:${gameNumber}`);
         if (gameData) {
           history.push(JSON.parse(gameData));
         }
@@ -549,7 +549,7 @@ app.get('/game-history/:chatId', async (c) => {
 app.get('/game-detail/:gameNumber', async (c) => {
   try {
     const gameNumber = c.req.param('gameNumber');
-    const gameData = await c.env.GAME_KV.get(`game:${gameNumber}`);
+    const gameData = await c.env.BC_GAME_KV.get(`game:${gameNumber}`);
 
     if (!gameData) {
       return c.json({ success: false, error: 'Game not found' });

@@ -95,7 +95,7 @@ wrangler secret put ALLOWED_CHAT_IDS
 
 ```bash
 # 创建 KV namespace
-wrangler kv:namespace create "GAME_KV"
+wrangler kv:namespace create "BC_GAME_KV"
 
 # 更新 wrangler.json 文件
 # 添加返回的 namespace ID 到配置中
@@ -109,7 +109,7 @@ wrangler.json 配置示例：
   "compatibility_date": "2024-01-15",
   "kv_namespaces": [
     {
-      "binding": "GAME_KV",
+      "binding": "BC_GAME_KV",
       "id": "your-kv-namespace-id"
     }
   ]

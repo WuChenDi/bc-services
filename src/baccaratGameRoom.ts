@@ -556,14 +556,14 @@ export class BaccaratGameRoom {
       };
 
       // 保存到 KV，使用游戏编号作为 key
-      await this.env.GAME_KV.put(`game:${this.game.gameNumber}`, JSON.stringify(gameRecord));
+      await this.env.BC_GAME_KV.put(`game:${this.game.gameNumber}`, JSON.stringify(gameRecord));
 
       // 更新最新游戏列表（保留最近100局）
       const latestGamesKey = `latest_games:${this.game.chatId}`;
       let latestGames: string[] = [];
 
       try {
-        const existing = await this.env.GAME_KV.get(latestGamesKey);
+        const existing = await this.env.BC_GAME_KV.get(latestGamesKey);
         if (existing) {
           latestGames = JSON.parse(existing);
         }
@@ -576,7 +576,7 @@ export class BaccaratGameRoom {
         latestGames = latestGames.slice(0, 100);
       }
 
-      await this.env.GAME_KV.put(latestGamesKey, JSON.stringify(latestGames));
+      await this.env.BC_GAME_KV.put(latestGamesKey, JSON.stringify(latestGames));
 
       console.log(`Game record saved: ${this.game.gameNumber}`);
     } catch (error) {
