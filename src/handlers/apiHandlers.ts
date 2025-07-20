@@ -12,10 +12,9 @@ export class ApiHandlers {
   private constants: Constants;
 
   constructor(
-    private gameRooms: DurableObjectNamespace,
+    private env: Env,
     private storage: StorageService,
     private botService: BotService,
-    private env: Env
   ) {
     this.app = new Hono<{ Bindings: Env }>();
     this.app.use('*', cors());
@@ -23,7 +22,7 @@ export class ApiHandlers {
 
     this.commandHandlers = new CommandHandlers(
       this.botService.bot,
-      this.gameRooms,
+      this.env.GAME_ROOMS,
       this.storage
     );
 

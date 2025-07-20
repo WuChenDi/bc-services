@@ -8,7 +8,7 @@ export default {
     const botService = new BotService(env.BOT_TOKEN);
     const storageService = new StorageService(env.BC_GAME_KV);
 
-    const apiHandlers = new ApiHandlers(env.GAME_ROOMS, storageService, botService);
+    const apiHandlers = new ApiHandlers(env, storageService, botService);
 
     return apiHandlers.getApp().fetch(request, env);
   }
