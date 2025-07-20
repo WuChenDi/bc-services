@@ -87,10 +87,10 @@ export class GameService {
       };
 
       await this.state.storage.put('game', this.game);
-      
+
       // 🔥 设置当前游戏ID，重置消息序列
       this.diceService.setCurrentGame(gameNumber);
-      
+
       console.log(`Game ${gameNumber} started successfully`);
 
       this.setupCountdownTimers(chatId, gameNumber);
@@ -334,7 +334,7 @@ export class GameService {
           this.game.chatId,
           '👤 **闲家需要补牌...**'
         );
-        
+
         console.log('🎲 Dealing player card 3...');
         playerThirdCard = await this.diceService.rollDice(this.game.chatId, 'player', 3);
         this.game.cards.player.push(playerThirdCard);
@@ -357,7 +357,7 @@ export class GameService {
           this.game.chatId,
           '🏦 **庄家需要补牌...**'
         );
-        
+
         console.log('🎲 Dealing banker card 3...');
         const bankerThirdCard = await this.diceService.rollDice(this.game.chatId, 'banker', 3);
         this.game.cards.banker.push(bankerThirdCard);

@@ -49,8 +49,8 @@ export interface PlaceBetResponse {
   isAccumulated?: boolean;      // 是否为累加下注
   previousAmount?: number;      // 之前的金额
   addedAmount?: number;         // 新增的金额
-  isReplaced?: boolean;         // 🔥 新增：是否为替换下注
-  previousBetType?: BetType;    // 🔥 新增：之前的下注类型
+  isReplaced?: boolean;         // 是否为替换下注
+  previousBetType?: BetType;    // 之前的下注类型
 }
 
 export interface StartGameResponse {

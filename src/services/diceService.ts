@@ -28,17 +28,17 @@ export class DiceService {
     try {
       // 使用消息队列处理骰子，严格按顺序
       const diceValue = await this.messageQueue.enqueueDice(chatId, playerType, cardIndex);
-      
+
       console.log(`🎲 Dice completed for ${playerType} card ${cardIndex}: ${diceValue}`);
       return diceValue;
-      
+
     } catch (error) {
       console.error(`🎲 Roll dice error for ${playerType} card ${cardIndex}:`, error);
-      
+
       // 最终失败时使用随机值
       const fallbackValue = Math.floor(Math.random() * 6) + 1;
       console.warn(`🎲 Using final fallback value: ${fallbackValue}`);
-      
+
       return fallbackValue;
     }
   }
