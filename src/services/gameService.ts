@@ -11,11 +11,13 @@ import {
 import { StorageService, DiceService } from '@/services';
 import { sleep, formatBetSummary, formatGameResult, calculatePoints } from '@/utils';
 import { getConstants, type Constants } from '@/config/constants';
+import { MessageQueueService } from './messageQueue';
 
 export class GameService {
   private game: GameData | null = null;
   private storage: StorageService;
   private diceService: DiceService;
+  private messageQueue: MessageQueueService;
   private timers: Map<string, number> = new Map();
   private isProcessing: boolean = false;
   private gameCleanupScheduled: boolean = false;
@@ -29,7 +31,8 @@ export class GameService {
   ) {
     this.storage = new StorageService(env.BC_GAME_KV);
     this.diceService = new DiceService(bot, env);
-    this.constants = getConstants(env); // 🔥 从环境变量获取配置
+    this.messageQueue = this.diceService.getMessageQueue(); // 共享消息队列
+    this.constants = getConstants(env);
   }
 
   async initialize() {
@@ -39,6 +42,9 @@ export class GameService {
       if (this.game) {
         const now = Date.now();
         console.log(`Initializing with game state: ${this.game.state}, gameNumber: ${this.game.gameNumber}`);
+
+        // 清理消息队列，避免旧消息干扰
+        this.messageQueue.clearQueue();
 
         if (this.game.state === GameState.Betting) {
           if (now > this.game.bettingEndTime + 30000) {
@@ -115,7 +121,6 @@ export class GameService {
         return { success: false, error: '单次下注金额不能超过10000点' };
       }
 
-      // 🔥 修改数据结构：支持多个下注类型
       if (!this.game.bets[userId]) {
         this.game.bets[userId] = { userName };
       }
@@ -123,7 +128,6 @@ export class GameService {
       const userBets = this.game.bets[userId];
       const existingBetAmount = (userBets as any)[betType] || 0;
 
-      // 🔥 检查该类型下注累加后是否超限
       const newAmount = existingBetAmount + amount;
       if (newAmount > 10000) {
         return {
@@ -132,7 +136,6 @@ export class GameService {
         };
       }
 
-      // 🔥 检查用户总下注是否超限
       const totalUserBets = Object.entries(userBets).reduce((sum: number, [key, value]) => {
         if (key !== 'userName' && typeof value === 'number') {
           return sum + value;
@@ -147,19 +150,15 @@ export class GameService {
         };
       }
 
-      // 🔥 更新用户的该类型下注
       (userBets as any)[betType] = newAmount;
-      userBets.userName = userName; // 保存用户名
+      userBets.userName = userName;
 
       await this.state.storage.put('game', this.game);
 
       const remainingTime = Math.max(0, Math.floor((this.game.bettingEndTime - now) / 1000));
-
-      // 🔥 计算参与用户数
       const totalUsers = Object.keys(this.game.bets).length;
 
       if (existingBetAmount > 0) {
-        // 累加下注
         return {
           success: true,
           betType,
@@ -172,7 +171,6 @@ export class GameService {
           addedAmount: amount
         };
       } else {
-        // 新增下注
         return {
           success: true,
           betType,
@@ -206,7 +204,6 @@ export class GameService {
     console.log(`Starting to process game ${this.game.gameNumber}`);
     this.isProcessing = true;
 
-    // 🔥 使用配置中的超时时间
     const globalTimeoutId = setTimeout(async () => {
       console.error('Game processing global timeout, forcing cleanup...');
       await this.forceCleanupGame('Global processing timeout');
@@ -219,14 +216,23 @@ export class GameService {
 
       const betsCount = Object.keys(this.game.bets).length;
 
+      // 使用消息队列发送消息，确保顺序
       if (betsCount === 0) {
-        this.sendMessageSafe(this.game.chatId,
-          `😔 **第 ${this.game.gameNumber} 局无人下注**\n\n🎲 但游戏继续进行，开始发牌...`
+        this.messageQueue.enqueueMessage(
+          this.game.chatId,
+          `😔 **第 ${this.game.gameNumber} 局无人下注**\n\n🎲 但游戏继续进行，开始发牌...`,
+          1 // 高优先级
         );
       } else {
-        this.sendMessageSafe(this.game.chatId, formatBetSummary(this.game));
-        await sleep(this.constants.MESSAGE_DELAY_MS);
+        this.messageQueue.enqueueMessage(
+          this.game.chatId,
+          formatBetSummary(this.game),
+          1 // 高优先级
+        );
       }
+
+      // 等待一下让消息发送完成
+      await sleep(2000);
 
       await this.startRevealing();
       clearTimeout(globalTimeoutId);
@@ -249,14 +255,22 @@ export class GameService {
       this.game.state = GameState.Revealing;
       await this.state.storage.put('game', this.game);
 
-      this.sendMessageSafe(this.game.chatId, `🎲 **开牌阶段开始！**\n\n🃏 庄家和闲家各发两张牌...`);
+      // 使用消息队列发送开牌消息
+      this.messageQueue.enqueueMessage(
+        this.game.chatId,
+        `🎲 **开牌阶段开始！**\n\n🃏 庄家和闲家各发两张牌...`,
+        1 // 高优先级
+      );
 
-      // 🔥 优化发牌流程 - 减少等待时间和简化逻辑
       await this.dealCards();
       await this.calculateAndSendResult();
     } catch (error) {
       console.error('Revealing error:', error);
-      this.sendMessageSafe(this.game.chatId, '❌ 开牌过程失败，游戏终止。请使用 /newgame 重新开始');
+      this.messageQueue.enqueueMessage(
+        this.game.chatId,
+        '❌ 开牌过程失败，游戏终止。请使用 /newgame 重新开始',
+        1 // 高优先级
+      );
       await this.forceCleanupGame('Revealing error');
     } finally {
       this.revealingInProgress = false;
@@ -269,15 +283,13 @@ export class GameService {
     console.log('Starting card dealing...');
 
     try {
-      // 前两张牌
+      // 前两张牌 - 使用消息队列确保顺序
       for (let i = 0; i < 2; i++) {
         const bankerCard = await this.diceService.rollDice(this.game.chatId, 'banker', i + 1);
         this.game.cards.banker.push(bankerCard);
-        await sleep(this.constants.CARD_DEAL_DELAY_MS);
 
         const playerCard = await this.diceService.rollDice(this.game.chatId, 'player', i + 1);
         this.game.cards.player.push(playerCard);
-        await sleep(this.constants.CARD_DEAL_DELAY_MS);
       }
 
       await this.state.storage.put('game', this.game);
@@ -285,17 +297,22 @@ export class GameService {
       const bankerSum = calculatePoints(this.game.cards.banker);
       const playerSum = calculatePoints(this.game.cards.player);
 
-      this.sendMessageSafe(this.game.chatId,
+      // 使用消息队列发送点数汇总
+      this.messageQueue.enqueueMessage(
+        this.game.chatId,
         `📊 **前两张牌点数:**\n` +
         `🏦 庄家: ${this.game.cards.banker.join(' + ')} = **${bankerSum} 点**\n` +
-        `👤 闲家: ${this.game.cards.player.join(' + ')} = **${playerSum} 点**`
+        `👤 闲家: ${this.game.cards.player.join(' + ')} = **${playerSum} 点**`,
+        2 // 中高优先级
       );
-
-      await sleep(this.constants.MESSAGE_DELAY_MS);
 
       // 判断是否需要补牌
       if (bankerSum >= 8 || playerSum >= 8) {
-        this.sendMessageSafe(this.game.chatId, '🎯 **天牌！无需补牌！**');
+        this.messageQueue.enqueueMessage(
+          this.game.chatId,
+          '🎯 **天牌！无需补牌！**',
+          2
+        );
       } else {
         await this.handleThirdCard(bankerSum, playerSum);
       }
@@ -313,8 +330,15 @@ export class GameService {
 
       // 闲家补牌逻辑
       if (playerSum <= 5) {
-        this.sendMessageSafe(this.game.chatId, '👤 **闲家需要补牌...**');
-        await sleep(800);
+        this.messageQueue.enqueueMessage(
+          this.game.chatId,
+          '👤 **闲家需要补牌...**',
+          2
+        );
+        
+        // 等待消息发送
+        await sleep(1000);
+        
         playerThirdCard = await this.diceService.rollDice(this.game.chatId, 'player', 3);
         this.game.cards.player.push(playerThirdCard);
       }
@@ -332,8 +356,15 @@ export class GameService {
       }
 
       if (bankerNeedCard) {
-        this.sendMessageSafe(this.game.chatId, '🏦 **庄家需要补牌...**');
-        await sleep(800);
+        this.messageQueue.enqueueMessage(
+          this.game.chatId,
+          '🏦 **庄家需要补牌...**',
+          2
+        );
+        
+        // 等待消息发送
+        await sleep(1000);
+        
         const bankerThirdCard = await this.diceService.rollDice(this.game.chatId, 'banker', 3);
         this.game.cards.banker.push(bankerThirdCard);
       }
@@ -345,7 +376,6 @@ export class GameService {
     }
   }
 
-  // 🔥 新增计算和发送结果的方法
   private async calculateAndSendResult(): Promise<void> {
     if (!this.game) return;
 
@@ -369,18 +399,24 @@ export class GameService {
       this.game.state = GameState.Finished;
       await this.state.storage.put('game', this.game);
 
-      // 🔥 异步保存游戏记录，不阻塞主流程
+      // 异步保存游戏记录
       this.saveGameRecordAsync();
 
-      await sleep(1500);
-
+      // 使用消息队列发送最终结果
       const autoGameEnabled = Boolean(await this.state.storage.get('autoGame'));
-      this.sendMessageSafe(this.game.chatId, formatGameResult(this.game, {
-        isAutoGameEnabled: autoGameEnabled,
-        nextGameDelaySeconds: this.constants.AUTO_GAME_INTERVAL_MS / 1000
-      }));
+      this.messageQueue.enqueueMessage(
+        this.game.chatId,
+        formatGameResult(this.game, {
+          isAutoGameEnabled: autoGameEnabled,
+          nextGameDelaySeconds: this.constants.AUTO_GAME_INTERVAL_MS / 1000
+        }),
+        1 // 最高优先级
+      );
 
       this.isProcessing = false;
+      
+      // 等待消息发送完成再处理游戏完成逻辑
+      await sleep(3000);
       await this.handleGameCompletion();
     } catch (error) {
       console.error('Calculate and send result error:', error);
@@ -388,7 +424,6 @@ export class GameService {
     }
   }
 
-  // 🔥 异步保存游戏记录
   private async saveGameRecordAsync(): Promise<void> {
     if (!this.game) return;
 
@@ -397,15 +432,6 @@ export class GameService {
       console.log(`Game record saved for ${this.game.gameNumber}`);
     } catch (saveError) {
       console.error('Failed to save game record:', saveError);
-    }
-  }
-
-  // 🔥 安全发送消息方法
-  private async sendMessageSafe(chatId: string, message: string): Promise<void> {
-    try {
-      await this.bot.api.sendMessage(chatId, message, { parse_mode: 'Markdown' });
-    } catch (error) {
-      console.error('Failed to send message:', error);
     }
   }
 
@@ -455,12 +481,15 @@ export class GameService {
       const result = await this.startGame(chatId);
 
       if (result.success) {
-        this.sendMessageSafe(chatId,
+        // 使用消息队列发送自动游戏开始消息
+        this.messageQueue.enqueueMessage(
+          chatId,
           `🤖 **自动游戏 - 第 ${result.gameNumber} 局开始！**\n\n` +
           `💰 下注时间：30秒\n` +
           `📝 下注格式：/bet banker 100\n` +
           `⏰ 30秒后将自动处理游戏...\n` +
-          `🔄 游戏将持续自动进行`
+          `🔄 游戏将持续自动进行`,
+          1 // 高优先级
         );
       } else {
         console.error('Failed to start auto game:', result.error);
@@ -492,7 +521,9 @@ export class GameService {
     try {
       await this.state.storage.put('autoGame', false);
       this.clearAllTimers();
-      console.log('Auto game disabled');
+      // 清空消息队列，停止所有待处理的消息
+      this.messageQueue.clearQueue();
+      console.log('Auto game disabled and message queue cleared');
       return { success: true, message: 'Auto game disabled' };
     } catch (error) {
       console.error('Disable auto game error:', error);
@@ -505,25 +536,22 @@ export class GameService {
 
     this.clearAllTimers();
 
-    // 🔥 改进方案：使用动态倒计时，确保时间一致性
-    const sendCountdownMessage = async (remainingSeconds: number) => {
-      try {
-        if (this.game && this.game.state === GameState.Betting && this.game.gameNumber === gameNumber) {
-          this.sendMessageSafe(chatId,
-            `⏰ **下注倒计时：${remainingSeconds}秒！**\n\n` +
-            `👥 当前参与人数：${Object.keys(this.game.bets).length}\n` +
-            `💡 抓紧时间下注哦~`
-          );
-        }
-      } catch (error) {
-        console.error('Countdown message error:', error);
+    // 使用消息队列发送倒计时消息
+    const sendCountdownMessage = (remainingSeconds: number) => {
+      if (this.game && this.game.state === GameState.Betting && this.game.gameNumber === gameNumber) {
+        this.messageQueue.enqueueMessage(
+          chatId,
+          `⏰ **下注倒计时：${remainingSeconds}秒！**\n\n` +
+          `👥 当前参与人数：${Object.keys(this.game.bets).length}\n` +
+          `💡 抓紧时间下注哦~`,
+          2 // 中高优先级
+        );
       }
     };
 
-    // 🔥 基于游戏结束时间计算精确的倒计时提醒
     if (this.game) {
       const gameEndTime = this.game.bettingEndTime;
-      const intervals = [20, 10, 5]; // 提醒时间点
+      const intervals = [20, 10, 5];
 
       intervals.forEach(seconds => {
         const reminderTime = gameEndTime - (seconds * 1000);
@@ -539,7 +567,7 @@ export class GameService {
         }
       });
 
-      // 🔥 游戏结束处理
+      // 游戏结束处理
       const timeToGameEnd = gameEndTime - Date.now();
       if (timeToGameEnd > 0) {
         const autoProcessTimer = setTimeout(async () => {
@@ -547,8 +575,11 @@ export class GameService {
             if (this.game && this.game.state === GameState.Betting && this.game.gameNumber === gameNumber) {
               console.log(`Auto processing game ${gameNumber}`);
 
-              this.sendMessageSafe(chatId,
-                `⛔ **第 ${this.game.gameNumber} 局停止下注！**\n\n🎲 开始自动处理游戏...`
+              // 使用消息队列发送停止下注消息
+              this.messageQueue.enqueueMessage(
+                chatId,
+                `⛔ **第 ${this.game.gameNumber} 局停止下注！**\n\n🎲 开始自动处理游戏...`,
+                1 // 最高优先级
               );
 
               await this.safeProcessGame();
@@ -566,19 +597,19 @@ export class GameService {
     console.log(`Dynamic countdown timers set for game ${gameNumber}`);
   }
 
-  // 🔥 重置所有标志
   private resetAllFlags(): void {
     this.isProcessing = false;
     this.gameCleanupScheduled = false;
     this.revealingInProgress = false;
   }
 
-  // 🔥 强制清理方法
   private async forceCleanupGame(reason?: string): Promise<void> {
     console.log(`Force cleaning up game: ${reason || 'Manual cleanup'}`);
     try {
       this.clearAllTimers();
       this.resetAllFlags();
+      // 清空消息队列
+      this.messageQueue.clearQueue();
       this.game = null;
       await this.state.storage.delete('game');
       console.log('Game force cleaned up successfully');
@@ -599,6 +630,8 @@ export class GameService {
       console.log(`Cleaning up game: ${reason || 'Manual cleanup'}`);
       this.clearAllTimers();
       this.resetAllFlags();
+      // 清空消息队列
+      this.messageQueue.clearQueue();
       this.game = null;
       await this.state.storage.delete('game');
       console.log('Game cleaned up successfully');
@@ -643,6 +676,9 @@ export class GameService {
       const now = Date.now();
       const timeRemaining = Math.max(0, Math.floor((this.game.bettingEndTime - now) / 1000));
 
+      // 添加消息队列状态信息
+      const queueStatus = this.messageQueue.getQueueStatus();
+
       return {
         gameNumber: this.game.gameNumber,
         state: this.game.state,
@@ -651,11 +687,29 @@ export class GameService {
         timeRemaining: this.game.state === GameState.Betting ? timeRemaining : 0,
         result: this.game.result,
         needsProcessing: this.game.state === GameState.Betting && now >= this.game.bettingEndTime,
-        autoGameEnabled
+        autoGameEnabled,
+        // 添加调试信息
+        debug: {
+          queueLength: queueStatus.queueLength,
+          queueProcessing: queueStatus.processing,
+          isProcessing: this.isProcessing,
+          revealingInProgress: this.revealingInProgress
+        }
       };
     } catch (error) {
       console.error('Get game status error:', error);
       return { status: 'error', autoGameEnabled: false };
     }
+  }
+
+  // 新增方法：获取消息队列状态（用于调试）
+  getMessageQueueStatus() {
+    return this.messageQueue.getQueueStatus();
+  }
+
+  // 新增方法：手动清空消息队列（紧急情况使用）
+  clearMessageQueue(): void {
+    this.messageQueue.clearQueue();
+    console.log('Message queue manually cleared');
   }
 }
