@@ -30,7 +30,7 @@ export class MessageQueueService {
   private sequenceCounter = 0;
   private currentGameId: string | null = null;
 
-  constructor(private bot: Bot) {}
+  constructor(private bot: Bot) { }
 
   /**
    * 设置当前游戏ID，用于消息序列控制
@@ -45,14 +45,14 @@ export class MessageQueueService {
    * 添加文本消息到队列
    */
   async enqueueMessage(
-    chatId: string, 
-    content: string, 
+    chatId: string,
+    content: string,
     isBlocking: boolean = false,
     parseMode: 'Markdown' | 'HTML' = 'Markdown'
   ): Promise<string> {
     const id = `msg_${++this.messageCounter}_${Date.now()}`;
     const sequenceId = ++this.sequenceCounter;
-    
+
     const message: QueuedMessage = {
       id,
       chatId,
@@ -66,12 +66,12 @@ export class MessageQueueService {
     };
 
     this.addToQueue(message);
-    
+
     // 如果是阻塞消息，等待处理完成
     if (isBlocking) {
       await this.waitForMessage(id);
     }
-    
+
     return id;
   }
 
@@ -79,14 +79,14 @@ export class MessageQueueService {
    * 添加骰子消息到队列（总是阻塞的）
    */
   async enqueueDice(
-    chatId: string, 
-    playerType: string, 
+    chatId: string,
+    playerType: string,
     cardIndex: number
   ): Promise<number> {
     return new Promise(async (resolve, reject) => {
       const id = `dice_${++this.messageCounter}_${Date.now()}`;
       const sequenceId = ++this.sequenceCounter;
-      
+
       const diceMessage: DiceMessage = {
         id,
         chatId,
@@ -104,7 +104,7 @@ export class MessageQueueService {
       };
 
       this.addToQueue(diceMessage);
-      
+
       // 等待骰子处理完成
       await this.waitForMessage(id);
 
@@ -168,12 +168,12 @@ export class MessageQueueService {
    */
   private addToQueue(message: QueuedMessage): void {
     this.queue.push(message);
-    
+
     // 严格按序列号排序，确保顺序
     this.queue.sort((a, b) => a.sequenceId - b.sequenceId);
 
     console.log(`Message queued: ${message.id}, sequence: ${message.sequenceId}, queue length: ${this.queue.length}`);
-    
+
     // 立即开始处理队列
     this.processQueue();
   }
@@ -192,15 +192,15 @@ export class MessageQueueService {
     while (this.queue.length > 0) {
       // 取出序列号最小的消息
       const message = this.queue.shift()!;
-      
+
       try {
         console.log(`Processing message: ${message.id}, sequence: ${message.sequenceId}, type: ${message.type}`);
-        
+
         await this.processMessage(message);
-        
+
         // 固定延迟，确保消息不会太快
         await sleep(this.messageDelay);
-        
+
       } catch (error) {
         console.error(`Failed to process message ${message.id}:`, error);
         await this.handleMessageError(message, error);
@@ -243,7 +243,7 @@ export class MessageQueueService {
   private async processDiceMessage(diceMessage: DiceMessage): Promise<void> {
     try {
       console.log(`🎲 Rolling dice for ${diceMessage.playerType} card ${diceMessage.cardIndex}`);
-      
+
       // 第一步：发送骰子
       const diceResult = await this.bot.api.sendDice(diceMessage.chatId, '🎲');
       const diceValue = diceResult.dice?.value;
@@ -260,7 +260,7 @@ export class MessageQueueService {
       // 第三步：发送结果消息
       const playerText = diceMessage.playerType === 'banker' ? '🏦 庄家' : '👤 闲家';
       const resultMessage = `🎯 **${playerText}第${diceMessage.cardIndex}张牌开出：${diceValue} 点**`;
-      
+
       await this.bot.api.sendMessage(diceMessage.chatId, resultMessage, {
         parse_mode: 'Markdown'
       });
@@ -271,21 +271,21 @@ export class MessageQueueService {
       if (diceMessage.onDiceResult) {
         await diceMessage.onDiceResult(diceValue);
       }
-      
+
     } catch (error) {
       console.error(`❌ Dice message error: ${diceMessage.id}`, error);
-      
+
       // 骰子失败时使用随机值
       const fallbackValue = Math.floor(Math.random() * 6) + 1;
       console.log(`🎲 Using fallback value: ${fallbackValue}`);
-      
+
       try {
         const playerText = diceMessage.playerType === 'banker' ? '🏦 庄家' : '👤 闲家';
-        const fallbackMessage = 
+        const fallbackMessage =
           `⚠️ **${playerText}第${diceMessage.cardIndex}张牌**\n` +
           `🎲 骰子发送失败，系统随机开出：**${fallbackValue} 点**\n` +
           `💡 游戏继续进行...`;
-        
+
         await this.bot.api.sendMessage(diceMessage.chatId, fallbackMessage, {
           parse_mode: 'Markdown'
         });
@@ -311,17 +311,17 @@ export class MessageQueueService {
 
     if (message.retries < this.maxRetries) {
       console.log(`🔄 Retrying message ${message.id}, attempt ${message.retries + 1}`);
-      
+
       // 重新加入队列，保持原序列号
       this.queue.push(message);
       this.queue.sort((a, b) => a.sequenceId - b.sequenceId);
-      
+
       // 延迟后重试
       await sleep(1000 * message.retries);
-      
+
     } else {
       console.error(`💀 Message ${message.id} failed after ${this.maxRetries} attempts:`, error);
-      
+
       // 如果是骰子消息，必须调用回调防止卡住
       if (message.type === 'dice') {
         const diceMessage = message as DiceMessage;
