@@ -521,6 +521,15 @@ npm run deploy
 curl -X POST "https://your-worker.workers.dev/set-webhook" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://your-worker.workers.dev/webhook"}'
+
+# api telegram
+curl -X GET "https://api.telegram.org/bot<token>/getWebhookInfo"
+
+curl -X GET "https://api.telegram.org/bot<token>/deleteWebhook"
+
+curl -X POST "https://api.telegram.org/bot<token>/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://your-worker.workers.dev/webhook"}'
 ```
 
 ## 游戏流程详解
