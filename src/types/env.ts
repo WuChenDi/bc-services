@@ -1,7 +1,6 @@
 export interface Env {
   // ===== 基础配置 =====
   BOT_TOKEN: string;                        // Telegram Bot Token - 必需
-  WEBHOOK_SECRET?: string;                  // Webhook 安全密钥 - 可选
   ALLOWED_CHAT_IDS?: string;                // 允许使用的聊天ID列表 (逗号分隔) - 可选
 
   // ===== Cloudflare 资源绑定 =====

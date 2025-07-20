@@ -837,7 +837,6 @@ private async processQueue(): Promise<void> {
 | 变量名             | 必需 | 说明                           | 示例                          |
 |--------------------|------|--------------------------------|-------------------------------|
 | `BOT_TOKEN`        | ✅   | Telegram Bot Token             | `1234567890:ABC...`          |
-| `WEBHOOK_SECRET`   | ❌   | Webhook 验证密钥               | `your-secret-key`            |
 | `ALLOWED_CHAT_IDS` | ❌   | 允许的群组ID列表（逗号分隔）   | `-1001234567890,-1009876543210` |
 
 所有时间相关参数都在 `wrangler.jsonc` 的 `vars` 字段中配置。
@@ -871,7 +870,6 @@ wrangler tail --env production
 ### 1. 安全配置
 - 定期轮换 `BOT_TOKEN`。
 - 配置 `ALLOWED_CHAT_IDS` 限制群组访问。
-- 启用 `WEBHOOK_SECRET` 验证 Webhook 请求。
 
 ### 2. 性能优化
 - 按需创建 Bot 实例，减少资源占用。
