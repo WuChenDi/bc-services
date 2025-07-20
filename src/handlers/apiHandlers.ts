@@ -4,22 +4,25 @@ import { webhookCallback } from 'grammy';
 import type { Env, StartGameRequest, EnableAutoRequest } from '@/types';
 import { BotService, StorageService } from '@/services';
 import { CommandHandlers } from './commandHandlers';
+import { getConstants, type Constants } from '@/config/constants';
 
 export class ApiHandlers {
   private app: Hono<{ Bindings: Env }>;
   private commandHandlers: CommandHandlers;
+  private constants: Constants;
 
   constructor(
     private gameRooms: DurableObjectNamespace,
     private storage: StorageService,
-    private botService: BotService
+    private botService: BotService,
+    private env: Env
   ) {
     this.app = new Hono<{ Bindings: Env }>();
     this.app.use('*', cors());
+    this.constants = getConstants(env);
 
-    // 在这里注册 Bot 命令 - 这是关键修复
     this.commandHandlers = new CommandHandlers(
-      this.botService.bot, // 使用同一个 Bot 实例
+      this.botService.bot,
       this.gameRooms,
       this.storage
     );
@@ -32,7 +35,13 @@ export class ApiHandlers {
     this.app.get('/', (c) => {
       return c.json({
         message: '百家乐 Bot with Hono and Durable Objects!',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+        constants: {
+          bettingDuration: `${this.constants.BETTING_DURATION_MS / 1000}s`,
+          autoGameInterval: `${this.constants.AUTO_GAME_INTERVAL_MS / 1000}s`,
+          diceAnimationWait: `${this.constants.DICE_ANIMATION_WAIT_MS / 1000}s`
+        }
       });
     });
 
@@ -40,7 +49,13 @@ export class ApiHandlers {
       return c.json({
         status: 'ok',
         platform: 'cloudflare-workers',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        config: {
+          bettingDurationMs: this.constants.BETTING_DURATION_MS,
+          autoGameIntervalMs: this.constants.AUTO_GAME_INTERVAL_MS,
+          diceAnimationWaitMs: this.constants.DICE_ANIMATION_WAIT_MS,
+          globalProcessTimeoutMs: this.constants.GLOBAL_PROCESS_TIMEOUT_MS
+        }
       });
     });
 
@@ -68,6 +83,12 @@ export class ApiHandlers {
     this.app.get('/game-history/:chatId', async (c) => {
       try {
         const chatId = c.req.param('chatId');
+
+        // 验证群组权限
+        if (!this.validateChatId(c, chatId)) {
+          return c.json({ error: 'Chat ID not allowed' }, 403);
+        }
+
         const history = await this.storage.getGameHistory(chatId);
         return c.json({
           success: true,
@@ -87,9 +108,18 @@ export class ApiHandlers {
     this.app.get('/game-detail/:gameNumber', async (c) => {
       try {
         const gameNumber = c.req.param('gameNumber');
+
+        // 验证游戏编号格式
+        if (!/^\d{17}$/.test(gameNumber)) {
+          return c.json({
+            success: false,
+            error: 'Invalid game number format. Expected 17 digits.'
+          }, 400);
+        }
+
         const game = await this.storage.getGameDetail(gameNumber);
         if (!game) {
-          return c.json({ success: false, error: 'Game not found' });
+          return c.json({ success: false, error: 'Game not found' }, 404);
         }
         return c.json({ success: true, game });
       } catch (error) {
@@ -105,6 +135,12 @@ export class ApiHandlers {
     this.app.post('/auto-game/:chatId', async (c) => {
       try {
         const chatId = c.req.param('chatId');
+
+        // 验证群组权限
+        if (!this.validateChatId(c, chatId)) {
+          return c.json({ error: 'Chat ID not allowed' }, 403);
+        }
+
         const roomId = c.env.GAME_ROOMS.idFromName(chatId);
         const room = c.env.GAME_ROOMS.get(roomId);
 
@@ -117,17 +153,19 @@ export class ApiHandlers {
         const result = await response.json() as any;
 
         if (result.success) {
+          const bettingDurationSeconds = this.constants.BETTING_DURATION_MS / 1000;
           await this.botService.sendMessage(chatId,
             `🎲 **自动游戏 - 第 ${result.gameNumber} 局开始！**\n\n` +
-            `💰 下注时间：30秒\n` +
+            `💰 下注时间：${bettingDurationSeconds}秒\n` +
             `📝 下注格式：/bet banker 100\n` +
-            `⏰ 30秒后将自动处理游戏...`
+            `⏰ ${bettingDurationSeconds}秒后将自动处理游戏...`
           );
           return c.json({
             success: true,
             gameNumber: result.gameNumber,
             chatId,
             bettingEndTime: result.bettingEndTime,
+            bettingDurationMs: this.constants.BETTING_DURATION_MS,
             message: 'Auto game started'
           });
         } else {
@@ -146,6 +184,12 @@ export class ApiHandlers {
     this.app.post('/enable-auto/:chatId', async (c) => {
       try {
         const chatId = c.req.param('chatId');
+
+        // 验证群组权限
+        if (!this.validateChatId(c, chatId)) {
+          return c.json({ error: 'Chat ID not allowed' }, 403);
+        }
+
         const roomId = c.env.GAME_ROOMS.idFromName(chatId);
         const room = c.env.GAME_ROOMS.get(roomId);
 
@@ -154,6 +198,18 @@ export class ApiHandlers {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ chatId } as EnableAutoRequest)
         }));
+
+        const result = await response.json() as any;
+
+        if (result.success) {
+          const autoIntervalSeconds = this.constants.AUTO_GAME_INTERVAL_MS / 1000;
+          return c.json({
+            ...result,
+            autoGameIntervalMs: this.constants.AUTO_GAME_INTERVAL_MS,
+            autoGameIntervalSeconds: autoIntervalSeconds,
+            message: `Auto game enabled with ${autoIntervalSeconds}s interval`
+          });
+        }
 
         return response;
       } catch (error) {
@@ -169,6 +225,12 @@ export class ApiHandlers {
     this.app.post('/disable-auto/:chatId', async (c) => {
       try {
         const chatId = c.req.param('chatId');
+
+        // 验证群组权限
+        if (!this.validateChatId(c, chatId)) {
+          return c.json({ error: 'Chat ID not allowed' }, 403);
+        }
+
         const roomId = c.env.GAME_ROOMS.idFromName(chatId);
         const room = c.env.GAME_ROOMS.get(roomId);
 
@@ -190,6 +252,12 @@ export class ApiHandlers {
     this.app.post('/process-game/:chatId', async (c) => {
       try {
         const chatId = c.req.param('chatId');
+
+        // 验证群组权限
+        if (!this.validateChatId(c, chatId)) {
+          return c.json({ error: 'Chat ID not allowed' }, 403);
+        }
+
         const roomId = c.env.GAME_ROOMS.idFromName(chatId);
         const room = c.env.GAME_ROOMS.get(roomId);
 
@@ -202,10 +270,14 @@ export class ApiHandlers {
         if (result.success) {
           return c.json({
             success: true,
-            message: 'Game processed successfully'
+            message: 'Game processed successfully',
+            timestamp: new Date().toISOString()
           });
         } else {
-          return c.json({ error: result.error }, 400);
+          return c.json({
+            error: result.error || 'Unknown error',
+            timestamp: new Date().toISOString()
+          }, 400);
         }
       } catch (error) {
         console.error('Process game error:', error);
@@ -220,11 +292,26 @@ export class ApiHandlers {
     this.app.get('/game-status/:chatId', async (c) => {
       try {
         const chatId = c.req.param('chatId');
+
+        // 验证群组权限
+        if (!this.validateChatId(c, chatId)) {
+          return c.json({ error: 'Chat ID not allowed' }, 403);
+        }
+
         const roomId = c.env.GAME_ROOMS.idFromName(chatId);
         const room = c.env.GAME_ROOMS.get(roomId);
 
         const response = await room.fetch('https://game.room/get-status');
         const result = await response.json() as any;
+
+        // 添加时间配置信息
+        if (result.gameNumber) {
+          result.config = {
+            bettingDurationMs: this.constants.BETTING_DURATION_MS,
+            autoGameIntervalMs: this.constants.AUTO_GAME_INTERVAL_MS,
+            diceAnimationWaitMs: this.constants.DICE_ANIMATION_WAIT_MS
+          };
+        }
 
         return c.json(result);
       } catch (error) {
@@ -245,8 +332,8 @@ export class ApiHandlers {
           return c.json({ error: 'chatId and message are required' }, 400);
         }
 
-        const allowedChatIds = c.env.ALLOWED_CHAT_IDS?.split(',').map(id => id.trim());
-        if (allowedChatIds && !allowedChatIds.includes(chatId.toString())) {
+        // 验证群组权限
+        if (!this.validateChatId(c, chatId.toString())) {
           return c.json({ error: 'Chat ID not allowed' }, 403);
         }
 
@@ -273,11 +360,19 @@ export class ApiHandlers {
           return c.json({ error: 'webhook url is required' }, 400);
         }
 
+        // 验证 URL 格式
+        try {
+          new URL(url);
+        } catch {
+          return c.json({ error: 'Invalid webhook URL format' }, 400);
+        }
+
         await this.botService.setWebhook(url);
         return c.json({
           success: true,
           message: 'Webhook set successfully',
-          url
+          url,
+          timestamp: new Date().toISOString()
         });
       } catch (error) {
         console.error('Set webhook error:', error);
@@ -287,6 +382,52 @@ export class ApiHandlers {
         }, 500);
       }
     });
+
+    // 获取配置信息 API
+    this.app.get('/config', (c) => {
+      return c.json({
+        success: true,
+        config: {
+          // 核心游戏时间
+          bettingDurationMs: this.constants.BETTING_DURATION_MS,
+          autoGameIntervalMs: this.constants.AUTO_GAME_INTERVAL_MS,
+
+          // 骰子相关时间
+          diceRollTimeoutMs: this.constants.DICE_ROLL_TIMEOUT_MS,
+          diceRollMaxRetries: this.constants.DICE_ROLL_MAX_RETRIES,
+          diceAnimationWaitMs: this.constants.DICE_ANIMATION_WAIT_MS,
+          diceResultDelayMs: this.constants.DICE_RESULT_DELAY_MS,
+
+          // 流程控制时间
+          cardDealDelayMs: this.constants.CARD_DEAL_DELAY_MS,
+          messageDelayMs: this.constants.MESSAGE_DELAY_MS,
+
+          // 系统保护时间
+          globalProcessTimeoutMs: this.constants.GLOBAL_PROCESS_TIMEOUT_MS,
+          cleanupDelayMs: this.constants.CLEANUP_DELAY_MS,
+
+          // 人性化显示
+          humanReadable: {
+            bettingDuration: `${this.constants.BETTING_DURATION_MS / 1000}秒`,
+            autoGameInterval: `${this.constants.AUTO_GAME_INTERVAL_MS / 1000}秒`,
+            diceAnimationWait: `${this.constants.DICE_ANIMATION_WAIT_MS / 1000}秒`,
+            globalProcessTimeout: `${this.constants.GLOBAL_PROCESS_TIMEOUT_MS / 1000}秒`
+          }
+        },
+        timestamp: new Date().toISOString()
+      });
+    });
+  }
+
+  /**
+   * 验证群组ID权限
+   */
+  private validateChatId(c: any, chatId: string): boolean {
+    const allowedChatIds = c.env.ALLOWED_CHAT_IDS?.split(',').map((id: string) => id.trim());
+    if (allowedChatIds && !allowedChatIds.includes(chatId)) {
+      return false;
+    }
+    return true;
   }
 
   getApp(): Hono<{ Bindings: Env }> {
