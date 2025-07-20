@@ -31,7 +31,7 @@ export class CommandHandlers {
     this.bot.command('status', this.handleStatus.bind(this));
     this.bot.command('history', this.handleHistory.bind(this));
     this.bot.command('gameinfo', this.handleGameInfo.bind(this));
-    this.bot.command('stopgame', this.handleStopGame.bind(this)); // 🔥 添加缺失的命令
+    this.bot.command('stopgame', this.handleStopGame.bind(this));
     this.bot.command('help', this.handleHelp.bind(this));
   }
 
