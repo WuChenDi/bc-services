@@ -9,7 +9,7 @@ export class DiceService {
 
   constructor(private bot: Bot, env: Env) {
     this.constants = getConstants(env);
-    this.messageQueue = new MessageQueueService(bot);
+    this.messageQueue = new MessageQueueService(bot, env);
   }
 
   /**

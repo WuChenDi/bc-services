@@ -1,5 +1,8 @@
 import { Bot } from 'grammy';
+import type { Env } from '@/types';
 import { sleep } from '@/utils';
+import { logger } from '@/services/loggerService';
+import { getConstants, type Constants } from '@/config/constants';
 
 export interface QueuedMessage {
   id: string;
@@ -21,24 +24,38 @@ export interface DiceMessage extends QueuedMessage {
 }
 
 export class MessageQueueService {
+  private constants: Constants;
   private queue: QueuedMessage[] = [];
   private processing: boolean = false;
   private readonly maxRetries = 3;
-  private readonly messageDelay = 1200; // 消息间固定间隔
-  private readonly diceDelay = 5000; // 骰子动画等待时间
   private messageCounter = 0;
   private sequenceCounter = 0;
   private currentGameId: string | null = null;
 
-  constructor(private bot: Bot) { }
+  constructor(private bot: Bot, env: Env) {
+    this.constants = getConstants(env);
+    // 设置组件级别的上下文
+    logger.setGlobalContext({ component: 'MessageQueue' });
+    logger.queue.info('MessageQueue service initialized');
+  }
 
   /**
    * 设置当前游戏ID，用于消息序列控制
    */
   setCurrentGame(gameId: string): void {
+    const previousGameId = this.currentGameId;
     this.currentGameId = gameId;
     this.sequenceCounter = 0; // 重置序列计数器
-    console.log(`Message queue: New game ${gameId}, sequence reset`);
+    
+    // 同步更新日志服务的游戏ID
+    logger.setCurrentGame(gameId);
+    
+    logger.queue.info('New game set, sequence reset', {
+      operation: 'set-current-game',
+      gameId,
+      previousGameId,
+      resetSequence: this.sequenceCounter
+    });
   }
 
   /**
@@ -65,11 +82,29 @@ export class MessageQueueService {
       isBlocking
     };
 
+    logger.queue.debug('Enqueuing text message', {
+      operation: 'enqueue-message',
+      messageId: id,
+      sequenceId,
+      isBlocking,
+      contentLength: content.length,
+      chatId,
+      queueLength: this.queue.length
+    });
+
     this.addToQueue(message);
 
     // 如果是阻塞消息，等待处理完成
     if (isBlocking) {
+      logger.queue.debug('Waiting for blocking message completion', {
+        operation: 'wait-blocking',
+        messageId: id
+      });
       await this.waitForMessage(id);
+      logger.queue.debug('Blocking message completed', {
+        operation: 'blocking-completed',
+        messageId: id
+      });
     }
 
     return id;
@@ -87,6 +122,16 @@ export class MessageQueueService {
       const id = `dice_${++this.messageCounter}_${Date.now()}`;
       const sequenceId = ++this.sequenceCounter;
 
+      logger.dice.info('Enqueuing dice message', {
+        operation: 'enqueue-dice',
+        messageId: id,
+        sequenceId,
+        playerType,
+        cardIndex,
+        chatId,
+        queueLength: this.queue.length
+      });
+
       const diceMessage: DiceMessage = {
         id,
         chatId,
@@ -99,6 +144,13 @@ export class MessageQueueService {
         timestamp: Date.now(),
         isBlocking: true,
         onDiceResult: async (value: number) => {
+          logger.dice.info('Dice result received', {
+            operation: 'dice-result',
+            messageId: id,
+            playerType,
+            cardIndex,
+            diceValue: value
+          });
           resolve(value);
         }
       };
@@ -109,9 +161,30 @@ export class MessageQueueService {
       await this.waitForMessage(id);
 
       // 超时处理
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
+        logger.dice.error('Dice processing timeout', {
+          operation: 'dice-timeout',
+          messageId: id,
+          playerType,
+          cardIndex,
+          timeout: 20000
+        });
         reject(new Error(`Dice timeout for ${playerType} card ${cardIndex}`));
       }, 20000);
+
+      // 监听 queue 变化，确保超时被取消
+      const checkCompletion = () => {
+        if (!this.queue.some(msg => msg.id === id) && !this.processing) {
+          clearTimeout(timeoutId);
+        }
+      };
+      this.queue.push = new Proxy(this.queue.push, {
+        apply: (target, thisArg, argumentsList) => {
+          const result = target.apply(thisArg, argumentsList);
+          checkCompletion();
+          return result;
+        }
+      });
     });
   }
 
@@ -119,10 +192,29 @@ export class MessageQueueService {
    * 清空队列并重置状态
    */
   clearQueue(): void {
-    console.log(`Clearing message queue with ${this.queue.length} messages`);
+    const queueLength = this.queue.length;
+    const queueItems = this.queue.map(msg => ({
+      id: msg.id,
+      type: msg.type,
+      sequenceId: msg.sequenceId
+    }));
+
+    logger.queue.warn('Clearing message queue', {
+      operation: 'clear-queue',
+      queueLength,
+      processing: this.processing,
+      currentSequence: this.sequenceCounter,
+      clearedItems: queueItems
+    });
+
     this.queue = [];
     this.processing = false;
     this.sequenceCounter = 0;
+
+    logger.queue.info('Message queue cleared successfully', {
+      operation: 'queue-cleared',
+      previousLength: queueLength
+    });
   }
 
   /**
@@ -134,12 +226,19 @@ export class MessageQueueService {
     currentSequence: number;
     currentGame: string | null;
   } {
-    return {
+    const status = {
       queueLength: this.queue.length,
       processing: this.processing,
       currentSequence: this.sequenceCounter,
       currentGame: this.currentGameId
     };
+
+    logger.queue.debug('Queue status requested', {
+      operation: 'get-status',
+      ...status
+    });
+
+    return status;
   }
 
   /**
@@ -147,17 +246,40 @@ export class MessageQueueService {
    */
   private async waitForMessage(messageId: string): Promise<void> {
     return new Promise((resolve) => {
+      const startTime = Date.now();
+      
+      logger.queue.debug('Starting to wait for message', {
+        operation: 'wait-message-start',
+        messageId,
+        queueLength: this.queue.length
+      });
+
       const checkInterval = setInterval(() => {
         const messageExists = this.queue.some(msg => msg.id === messageId);
+        const waitTime = Date.now() - startTime;
+        
         if (!messageExists && !this.processing) {
           clearInterval(checkInterval);
+          clearTimeout(timeoutId); // 清除超时定时器
+          logger.queue.debug('Message wait completed', {
+            operation: 'wait-message-complete',
+            messageId,
+            waitTime
+          });
           resolve();
         }
       }, 100);
 
       // 10秒超时
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         clearInterval(checkInterval);
+        const waitTime = Date.now() - startTime;
+        logger.queue.warn('Message wait timeout', {
+          operation: 'wait-message-timeout',
+          messageId,
+          waitTime,
+          timeout: 10000
+        });
         resolve();
       }, 10000);
     });
@@ -172,7 +294,14 @@ export class MessageQueueService {
     // 严格按序列号排序，确保顺序
     this.queue.sort((a, b) => a.sequenceId - b.sequenceId);
 
-    console.log(`Message queued: ${message.id}, sequence: ${message.sequenceId}, queue length: ${this.queue.length}`);
+    logger.queue.debug('Message added to queue', {
+      operation: 'add-to-queue',
+      messageId: message.id,
+      sequenceId: message.sequenceId,
+      type: message.type,
+      queueLength: this.queue.length,
+      isBlocking: message.isBlocking
+    });
 
     // 立即开始处理队列
     this.processQueue();
@@ -183,42 +312,93 @@ export class MessageQueueService {
    */
   private async processQueue(): Promise<void> {
     if (this.processing) {
+      logger.queue.debug('Queue processing already in progress, skipping', {
+        operation: 'process-queue-skip',
+        queueLength: this.queue.length
+      });
       return;
     }
 
     this.processing = true;
-    console.log(`Starting sequential queue processing with ${this.queue.length} messages`);
+    const timer = logger.performance.start('processQueue');
+    
+    logger.queue.info('Starting sequential queue processing', {
+      operation: 'process-queue-start',
+      queueLength: this.queue.length,
+      currentSequence: this.sequenceCounter
+    });
+
+    let processedCount = 0;
+    let errorCount = 0;
 
     while (this.queue.length > 0) {
       // 取出序列号最小的消息
       const message = this.queue.shift()!;
 
       try {
-        console.log(`Processing message: ${message.id}, sequence: ${message.sequenceId}, type: ${message.type}`);
+        logger.queue.debug('Processing message', {
+          operation: 'process-message',
+          messageId: message.id,
+          sequenceId: message.sequenceId,
+          type: message.type,
+          remainingInQueue: this.queue.length
+        });
 
         await this.processMessage(message);
+        processedCount++;
 
         // 固定延迟，确保消息不会太快
-        await sleep(this.messageDelay);
+        await sleep(this.constants.MESSAGE_DELAY_MS);
 
       } catch (error) {
-        console.error(`Failed to process message ${message.id}:`, error);
+        errorCount++;
+        logger.queue.error('Failed to process message', {
+          operation: 'process-message-error',
+          messageId: message.id,
+          sequenceId: message.sequenceId,
+          type: message.type
+        }, error);
+        
         await this.handleMessageError(message, error);
       }
     }
 
     this.processing = false;
-    console.log('Sequential queue processing completed');
+    
+    timer.end({
+      processedCount,
+      errorCount,
+      finalQueueLength: this.queue.length
+    });
+    
+    logger.queue.info('Sequential queue processing completed', {
+      operation: 'process-queue-complete',
+      processedCount,
+      errorCount,
+      finalQueueLength: this.queue.length
+    });
   }
 
   /**
    * 处理单个消息
    */
   private async processMessage(message: QueuedMessage): Promise<void> {
-    if (message.type === 'text') {
-      await this.processTextMessage(message);
-    } else if (message.type === 'dice') {
-      await this.processDiceMessage(message as DiceMessage);
+    const timer = logger.performance.start(`processMessage_${message.type}`, {
+      messageId: message.id,
+      type: message.type
+    });
+
+    try {
+      if (message.type === 'text') {
+        await this.processTextMessage(message);
+      } else if (message.type === 'dice') {
+        await this.processDiceMessage(message as DiceMessage);
+      }
+      
+      timer.end({ success: true });
+    } catch (error) {
+      timer.end({ success: false, error: true });
+      throw error;
     }
   }
 
@@ -226,13 +406,37 @@ export class MessageQueueService {
    * 处理文本消息
    */
   private async processTextMessage(message: QueuedMessage): Promise<void> {
+    const timer = logger.performance.start('sendTextMessage', {
+      messageId: message.id,
+      chatId: message.chatId
+    });
+
     try {
       await this.bot.api.sendMessage(message.chatId, message.content, {
         parse_mode: message.parseMode
       });
-      console.log(`✅ Text message sent: ${message.id}`);
+      
+      logger.queue.info('Text message sent successfully', {
+        operation: 'send-text-message',
+        messageId: message.id,
+        chatId: message.chatId,
+        contentLength: message.content.length,
+        parseMode: message.parseMode
+      });
+      
+      timer.end({
+        success: true,
+        contentLength: message.content.length
+      });
     } catch (error) {
-      console.error(`❌ Text message failed: ${message.id}`, error);
+      logger.queue.error('Text message send failed', {
+        operation: 'send-text-message-error',
+        messageId: message.id,
+        chatId: message.chatId,
+        parseMode: message.parseMode
+      }, error);
+      
+      timer.end({ success: false, error: true });
       throw error;
     }
   }
@@ -241,8 +445,20 @@ export class MessageQueueService {
    * 处理骰子消息
    */
   private async processDiceMessage(diceMessage: DiceMessage): Promise<void> {
+    const timer = logger.performance.start('processDiceMessage', {
+      messageId: diceMessage.id,
+      playerType: diceMessage.playerType,
+      cardIndex: diceMessage.cardIndex
+    });
+
     try {
-      console.log(`🎲 Rolling dice for ${diceMessage.playerType} card ${diceMessage.cardIndex}`);
+      logger.dice.info('Starting dice roll process', {
+        operation: 'dice-roll-start',
+        messageId: diceMessage.id,
+        playerType: diceMessage.playerType,
+        cardIndex: diceMessage.cardIndex,
+        chatId: diceMessage.chatId
+      });
 
       // 第一步：发送骰子
       const diceResult = await this.bot.api.sendDice(diceMessage.chatId, '🎲');
@@ -252,10 +468,17 @@ export class MessageQueueService {
         throw new Error(`Invalid dice value: ${diceValue}`);
       }
 
-      console.log(`🎲 Dice animation started, value: ${diceValue}`);
+      logger.dice.info('Dice animation started', {
+        operation: 'dice-animation-start',
+        messageId: diceMessage.id,
+        playerType: diceMessage.playerType,
+        cardIndex: diceMessage.cardIndex,
+        diceValue,
+        telegramMessageId: diceResult.message_id
+      });
 
       // 第二步：等待骰子动画完成
-      await sleep(this.diceDelay);
+      await sleep(this.constants.DICE_ANIMATION_WAIT_MS);
 
       // 第三步：发送结果消息
       const playerText = diceMessage.playerType === 'banker' ? '🏦 庄家' : '👤 闲家';
@@ -265,19 +488,44 @@ export class MessageQueueService {
         parse_mode: 'Markdown'
       });
 
-      console.log(`✅ Dice process completed: ${diceMessage.id}, value: ${diceValue}`);
+      logger.dice.info('Dice process completed successfully', {
+        operation: 'dice-process-complete',
+        messageId: diceMessage.id,
+        playerType: diceMessage.playerType,
+        cardIndex: diceMessage.cardIndex,
+        diceValue
+      });
 
       // 第四步：调用回调
       if (diceMessage.onDiceResult) {
         await diceMessage.onDiceResult(diceValue);
       }
 
+      timer.end({
+        success: true,
+        diceValue,
+        playerType: diceMessage.playerType,
+        cardIndex: diceMessage.cardIndex
+      });
+
     } catch (error) {
-      console.error(`❌ Dice message error: ${diceMessage.id}`, error);
+      logger.dice.error('Dice message processing error', {
+        operation: 'dice-process-error',
+        messageId: diceMessage.id,
+        playerType: diceMessage.playerType,
+        cardIndex: diceMessage.cardIndex
+      }, error);
 
       // 骰子失败时使用随机值
       const fallbackValue = Math.floor(Math.random() * 6) + 1;
-      console.log(`🎲 Using fallback value: ${fallbackValue}`);
+      
+      logger.dice.warn('Using fallback dice value', {
+        operation: 'dice-fallback',
+        messageId: diceMessage.id,
+        playerType: diceMessage.playerType,
+        cardIndex: diceMessage.cardIndex,
+        fallbackValue
+      });
 
       try {
         const playerText = diceMessage.playerType === 'banker' ? '🏦 庄家' : '👤 闲家';
@@ -293,12 +541,37 @@ export class MessageQueueService {
         if (diceMessage.onDiceResult) {
           await diceMessage.onDiceResult(fallbackValue);
         }
+
+        logger.dice.info('Fallback message sent successfully', {
+          operation: 'dice-fallback-success',
+          messageId: diceMessage.id,
+          fallbackValue
+        });
+
+        timer.end({
+          success: true,
+          usedFallback: true,
+          fallbackValue
+        });
+
       } catch (fallbackError) {
-        console.error(`❌ Fallback message also failed:`, fallbackError);
+        logger.dice.error('Fallback message also failed', {
+          operation: 'dice-fallback-error',
+          messageId: diceMessage.id,
+          fallbackValue
+        }, fallbackError);
+        
         // 最终兜底：直接调用回调
         if (diceMessage.onDiceResult) {
           await diceMessage.onDiceResult(fallbackValue);
         }
+
+        timer.end({
+          success: false,
+          usedFallback: true,
+          fallbackValue,
+          error: true
+        });
       }
     }
   }
@@ -309,8 +582,21 @@ export class MessageQueueService {
   private async handleMessageError(message: QueuedMessage, error: any): Promise<void> {
     message.retries = (message.retries || 0) + 1;
 
+    logger.queue.warn('Message processing failed, handling error', {
+      operation: 'handle-message-error',
+      messageId: message.id,
+      type: message.type,
+      retries: message.retries,
+      maxRetries: this.maxRetries
+    }, error);
+
     if (message.retries < this.maxRetries) {
-      console.log(`🔄 Retrying message ${message.id}, attempt ${message.retries + 1}`);
+      logger.queue.info('Retrying message', {
+        operation: 'retry-message',
+        messageId: message.id,
+        attempt: message.retries + 1,
+        maxRetries: this.maxRetries
+      });
 
       // 重新加入队列，保持原序列号
       this.queue.push(message);
@@ -320,14 +606,27 @@ export class MessageQueueService {
       await sleep(1000 * message.retries);
 
     } else {
-      console.error(`💀 Message ${message.id} failed after ${this.maxRetries} attempts:`, error);
+      logger.queue.error('Message failed after all retries', {
+        operation: 'message-failed-final',
+        messageId: message.id,
+        type: message.type,
+        totalRetries: this.maxRetries
+      }, error);
 
       // 如果是骰子消息，必须调用回调防止卡住
       if (message.type === 'dice') {
         const diceMessage = message as DiceMessage;
         if (diceMessage.onDiceResult) {
           const fallbackValue = Math.floor(Math.random() * 6) + 1;
-          console.log(`🎲 Final fallback for ${diceMessage.id}: ${fallbackValue}`);
+          
+          logger.dice.warn('Using final fallback for failed dice message', {
+            operation: 'dice-final-fallback',
+            messageId: diceMessage.id,
+            playerType: diceMessage.playerType,
+            cardIndex: diceMessage.cardIndex,
+            fallbackValue
+          });
+          
           await diceMessage.onDiceResult(fallbackValue);
         }
       }
