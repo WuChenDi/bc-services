@@ -36,7 +36,7 @@ export class MessageQueueService {
     this.constants = getConstants(env);
     // 设置组件级别的上下文
     logger.setGlobalContext({ component: 'MessageQueue' });
-    logger.queue.info('MessageQueue service initialized');
+    logger.queue.info('消息队列服务已初始化');
   }
 
   /**
@@ -46,11 +46,11 @@ export class MessageQueueService {
     const previousGameId = this.currentGameId;
     this.currentGameId = gameId;
     this.sequenceCounter = 0; // 重置序列计数器
-    
+
     // 同步更新日志服务的游戏ID
     logger.setCurrentGame(gameId);
-    
-    logger.queue.info('New game set, sequence reset', {
+
+    logger.queue.info('新游戏已设置，序列已重置', {
       operation: 'set-current-game',
       gameId,
       previousGameId,
@@ -82,7 +82,7 @@ export class MessageQueueService {
       isBlocking
     };
 
-    logger.queue.debug('Enqueuing text message', {
+    logger.queue.debug('添加文本消息到队列', {
       operation: 'enqueue-message',
       messageId: id,
       sequenceId,
@@ -96,12 +96,12 @@ export class MessageQueueService {
 
     // 如果是阻塞消息，等待处理完成
     if (isBlocking) {
-      logger.queue.debug('Waiting for blocking message completion', {
+      logger.queue.debug('等待阻塞消息完成', {
         operation: 'wait-blocking',
         messageId: id
       });
       await this.waitForMessage(id);
-      logger.queue.debug('Blocking message completed', {
+      logger.queue.debug('阻塞消息已完成', {
         operation: 'blocking-completed',
         messageId: id
       });
@@ -122,7 +122,7 @@ export class MessageQueueService {
       const id = `dice_${++this.messageCounter}_${Date.now()}`;
       const sequenceId = ++this.sequenceCounter;
 
-      logger.dice.info('Enqueuing dice message', {
+      logger.dice.info('添加骰子消息到队列', {
         operation: 'enqueue-dice',
         messageId: id,
         sequenceId,
@@ -144,7 +144,7 @@ export class MessageQueueService {
         timestamp: Date.now(),
         isBlocking: true,
         onDiceResult: async (value: number) => {
-          logger.dice.info('Dice result received', {
+          logger.dice.info('收到骰子结果', {
             operation: 'dice-result',
             messageId: id,
             playerType,
@@ -162,14 +162,14 @@ export class MessageQueueService {
 
       // 超时处理
       const timeoutId = setTimeout(() => {
-        logger.dice.error('Dice processing timeout', {
+        logger.dice.error('骰子处理超时', {
           operation: 'dice-timeout',
           messageId: id,
           playerType,
           cardIndex,
           timeout: 20000
         });
-        reject(new Error(`Dice timeout for ${playerType} card ${cardIndex}`));
+        reject(new Error(`骰子超时：${playerType} 第${cardIndex}张牌`));
       }, 20000);
 
       // 监听 queue 变化，确保超时被取消
@@ -199,7 +199,7 @@ export class MessageQueueService {
       sequenceId: msg.sequenceId
     }));
 
-    logger.queue.warn('Clearing message queue', {
+    logger.queue.warn('正在清空消息队列', {
       operation: 'clear-queue',
       queueLength,
       processing: this.processing,
@@ -211,7 +211,7 @@ export class MessageQueueService {
     this.processing = false;
     this.sequenceCounter = 0;
 
-    logger.queue.info('Message queue cleared successfully', {
+    logger.queue.info('消息队列已清空', {
       operation: 'queue-cleared',
       previousLength: queueLength
     });
@@ -233,7 +233,7 @@ export class MessageQueueService {
       currentGame: this.currentGameId
     };
 
-    logger.queue.debug('Queue status requested', {
+    logger.queue.debug('请求队列状态', {
       operation: 'get-status',
       ...status
     });
@@ -247,8 +247,8 @@ export class MessageQueueService {
   private async waitForMessage(messageId: string): Promise<void> {
     return new Promise((resolve) => {
       const startTime = Date.now();
-      
-      logger.queue.debug('Starting to wait for message', {
+
+      logger.queue.debug('开始等待消息处理', {
         operation: 'wait-message-start',
         messageId,
         queueLength: this.queue.length
@@ -257,11 +257,11 @@ export class MessageQueueService {
       const checkInterval = setInterval(() => {
         const messageExists = this.queue.some(msg => msg.id === messageId);
         const waitTime = Date.now() - startTime;
-        
+
         if (!messageExists && !this.processing) {
           clearInterval(checkInterval);
           clearTimeout(timeoutId); // 清除超时定时器
-          logger.queue.debug('Message wait completed', {
+          logger.queue.debug('消息等待完成', {
             operation: 'wait-message-complete',
             messageId,
             waitTime
@@ -274,7 +274,7 @@ export class MessageQueueService {
       const timeoutId = setTimeout(() => {
         clearInterval(checkInterval);
         const waitTime = Date.now() - startTime;
-        logger.queue.warn('Message wait timeout', {
+        logger.queue.warn('消息等待超时', {
           operation: 'wait-message-timeout',
           messageId,
           waitTime,
@@ -294,7 +294,7 @@ export class MessageQueueService {
     // 严格按序列号排序，确保顺序
     this.queue.sort((a, b) => a.sequenceId - b.sequenceId);
 
-    logger.queue.debug('Message added to queue', {
+    logger.queue.debug('消息已添加到队列', {
       operation: 'add-to-queue',
       messageId: message.id,
       sequenceId: message.sequenceId,
@@ -312,7 +312,7 @@ export class MessageQueueService {
    */
   private async processQueue(): Promise<void> {
     if (this.processing) {
-      logger.queue.debug('Queue processing already in progress, skipping', {
+      logger.queue.debug('队列处理已在进行，跳过', {
         operation: 'process-queue-skip',
         queueLength: this.queue.length
       });
@@ -321,8 +321,8 @@ export class MessageQueueService {
 
     this.processing = true;
     const timer = logger.performance.start('processQueue');
-    
-    logger.queue.info('Starting sequential queue processing', {
+
+    logger.queue.info('开始顺序处理队列', {
       operation: 'process-queue-start',
       queueLength: this.queue.length,
       currentSequence: this.sequenceCounter
@@ -336,7 +336,7 @@ export class MessageQueueService {
       const message = this.queue.shift()!;
 
       try {
-        logger.queue.debug('Processing message', {
+        logger.queue.debug('处理消息', {
           operation: 'process-message',
           messageId: message.id,
           sequenceId: message.sequenceId,
@@ -352,26 +352,26 @@ export class MessageQueueService {
 
       } catch (error) {
         errorCount++;
-        logger.queue.error('Failed to process message', {
+        logger.queue.error('消息处理失败', {
           operation: 'process-message-error',
           messageId: message.id,
           sequenceId: message.sequenceId,
           type: message.type
         }, error);
-        
+
         await this.handleMessageError(message, error);
       }
     }
 
     this.processing = false;
-    
+
     timer.end({
       processedCount,
       errorCount,
       finalQueueLength: this.queue.length
     });
-    
-    logger.queue.info('Sequential queue processing completed', {
+
+    logger.queue.info('队列顺序处理完成', {
       operation: 'process-queue-complete',
       processedCount,
       errorCount,
@@ -394,7 +394,7 @@ export class MessageQueueService {
       } else if (message.type === 'dice') {
         await this.processDiceMessage(message as DiceMessage);
       }
-      
+
       timer.end({ success: true });
     } catch (error) {
       timer.end({ success: false, error: true });
@@ -415,27 +415,27 @@ export class MessageQueueService {
       await this.bot.api.sendMessage(message.chatId, message.content, {
         parse_mode: message.parseMode
       });
-      
-      logger.queue.info('Text message sent successfully', {
+
+      logger.queue.info('文本消息发送成功', {
         operation: 'send-text-message',
         messageId: message.id,
         chatId: message.chatId,
         contentLength: message.content.length,
         parseMode: message.parseMode
       });
-      
+
       timer.end({
         success: true,
         contentLength: message.content.length
       });
     } catch (error) {
-      logger.queue.error('Text message send failed', {
+      logger.queue.error('文本消息发送失败', {
         operation: 'send-text-message-error',
         messageId: message.id,
         chatId: message.chatId,
         parseMode: message.parseMode
       }, error);
-      
+
       timer.end({ success: false, error: true });
       throw error;
     }
@@ -452,7 +452,7 @@ export class MessageQueueService {
     });
 
     try {
-      logger.dice.info('Starting dice roll process', {
+      logger.dice.info('开始处理骰子投掷', {
         operation: 'dice-roll-start',
         messageId: diceMessage.id,
         playerType: diceMessage.playerType,
@@ -465,10 +465,10 @@ export class MessageQueueService {
       const diceValue = diceResult.dice?.value;
 
       if (!diceValue || diceValue < 1 || diceValue > 6) {
-        throw new Error(`Invalid dice value: ${diceValue}`);
+        throw new Error(`无效的骰子值：${diceValue}`);
       }
 
-      logger.dice.info('Dice animation started', {
+      logger.dice.info('骰子动画已开始', {
         operation: 'dice-animation-start',
         messageId: diceMessage.id,
         playerType: diceMessage.playerType,
@@ -488,7 +488,7 @@ export class MessageQueueService {
         parse_mode: 'Markdown'
       });
 
-      logger.dice.info('Dice process completed successfully', {
+      logger.dice.info('骰子处理完成', {
         operation: 'dice-process-complete',
         messageId: diceMessage.id,
         playerType: diceMessage.playerType,
@@ -509,7 +509,7 @@ export class MessageQueueService {
       });
 
     } catch (error) {
-      logger.dice.error('Dice message processing error', {
+      logger.dice.error('骰子消息处理失败', {
         operation: 'dice-process-error',
         messageId: diceMessage.id,
         playerType: diceMessage.playerType,
@@ -518,8 +518,8 @@ export class MessageQueueService {
 
       // 骰子失败时使用随机值
       const fallbackValue = Math.floor(Math.random() * 6) + 1;
-      
-      logger.dice.warn('Using fallback dice value', {
+
+      logger.dice.warn('使用备用骰子值', {
         operation: 'dice-fallback',
         messageId: diceMessage.id,
         playerType: diceMessage.playerType,
@@ -542,7 +542,7 @@ export class MessageQueueService {
           await diceMessage.onDiceResult(fallbackValue);
         }
 
-        logger.dice.info('Fallback message sent successfully', {
+        logger.dice.info('备用消息发送成功', {
           operation: 'dice-fallback-success',
           messageId: diceMessage.id,
           fallbackValue
@@ -555,12 +555,12 @@ export class MessageQueueService {
         });
 
       } catch (fallbackError) {
-        logger.dice.error('Fallback message also failed', {
+        logger.dice.error('备用消息发送失败', {
           operation: 'dice-fallback-error',
           messageId: diceMessage.id,
           fallbackValue
         }, fallbackError);
-        
+
         // 最终兜底：直接调用回调
         if (diceMessage.onDiceResult) {
           await diceMessage.onDiceResult(fallbackValue);
@@ -582,7 +582,7 @@ export class MessageQueueService {
   private async handleMessageError(message: QueuedMessage, error: any): Promise<void> {
     message.retries = (message.retries || 0) + 1;
 
-    logger.queue.warn('Message processing failed, handling error', {
+    logger.queue.warn('消息处理失败，正在处理错误', {
       operation: 'handle-message-error',
       messageId: message.id,
       type: message.type,
@@ -591,7 +591,7 @@ export class MessageQueueService {
     }, error);
 
     if (message.retries < this.maxRetries) {
-      logger.queue.info('Retrying message', {
+      logger.queue.info('重试消息', {
         operation: 'retry-message',
         messageId: message.id,
         attempt: message.retries + 1,
@@ -606,7 +606,7 @@ export class MessageQueueService {
       await sleep(1000 * message.retries);
 
     } else {
-      logger.queue.error('Message failed after all retries', {
+      logger.queue.error('消息在所有重试后失败', {
         operation: 'message-failed-final',
         messageId: message.id,
         type: message.type,
@@ -618,15 +618,15 @@ export class MessageQueueService {
         const diceMessage = message as DiceMessage;
         if (diceMessage.onDiceResult) {
           const fallbackValue = Math.floor(Math.random() * 6) + 1;
-          
-          logger.dice.warn('Using final fallback for failed dice message', {
+
+          logger.dice.warn('为失败的骰子消息使用最终备用值', {
             operation: 'dice-final-fallback',
             messageId: diceMessage.id,
             playerType: diceMessage.playerType,
             cardIndex: diceMessage.cardIndex,
             fallbackValue
           });
-          
+
           await diceMessage.onDiceResult(fallbackValue);
         }
       }
