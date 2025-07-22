@@ -5,96 +5,102 @@
 ## 功能特性
 
 ### 🎲 游戏功能
-- **完整百家乐规则**：支持庄家、闲家、和局三种下注类型。
-- **真实补牌规则**：严格遵循百家乐标准补牌规则。
-- **沉浸式发牌体验**：先显示骰子动画，等待4秒后公布点数，营造真实赌场氛围。
-- **严格发牌顺序**：开牌提示 → 庄1 → 闲1 → 庄2 → 闲2 → 点数汇总 → 补牌提示 → 补牌 → 最终结果。
-- **消息队列系统**：确保发牌顺序和消息一致性，防止并发问题。
-- **自动游戏流程**：30秒下注时间，精准倒计时提醒，自动开牌，结果公布。
-- **自动游戏模式**：支持连续自动进行游戏，每局间隔10秒。
-- **多群组支持**：每个群组通过 Durable Objects 维护独立游戏状态。
-- **数据持久化**：使用 Cloudflare KV 存储游戏记录，结合内存缓存。
+- **完整百家乐规则**：支持庄家、闲家、和局三种下注类型
+- **真实补牌规则**：严格遵循百家乐标准补牌规则
+- **沉浸式发牌体验**：先显示骰子动画，等待4秒后公布点数，营造真实赌场氛围
+- **严格发牌顺序**：开牌提示 → 庄1 → 闲1 → 庄2 → 闲2 → 点数汇总 → 补牌提示 → 补牌 → 最终结果
+- **消息队列系统**：确保发牌顺序和消息一致性，防止并发问题
+- **自动游戏流程**：30秒下注时间，精准倒计时提醒，自动开牌，结果公布
+- **自动游戏模式**：支持连续自动进行游戏，每局间隔10秒
+- **多群组支持**：每个群组通过 Durable Objects 维护独立游戏状态
+- **数据持久化**：使用 Cloudflare KV 存储游戏记录，结合内存缓存
 
 ### 🤖 Bot 命令
-- `/start` - 启动 Bot 并显示完整游戏说明。
-- `/id` - 获取群组和用户 ID 信息。
-- `/newgame` - 开始新的百家乐游戏。
-- `/bet <类型> <金额>` - 下注（banker/player/tie，例如 `/bet banker 100`）。
-- `/process` - 手动触发游戏处理（开牌）。
-- `/status` - 查看当前游戏状态和下注汇总。
-- `/stopgame` - 停止当前游戏并关闭自动模式。
-- `/autogame` - 开启自动游戏模式。
-- `/stopauto` - 关闭自动游戏模式。
-- `/history` - 查看最近10局游戏记录。
-- `/gameinfo <游戏编号>` - 查看指定游戏的详细信息。
-- `/help` - 显示帮助信息。
+- `/start` - 启动 Bot 并显示完整游戏说明
+- `/id` - 获取群组和用户 ID 信息
+- `/newgame` - 开始新的百家乐游戏
+- `/bet <类型> <金额>` - 下注（banker/player/tie，例如 `/bet banker 100`）
+- `/process` - 手动触发游戏处理（开牌）
+- `/status` - 查看当前游戏状态和下注汇总
+- `/stopgame` - 停止当前游戏并关闭自动模式
+- `/autogame` - 开启自动游戏模式
+- `/stopauto` - 关闭自动游戏模式
+- `/history` - 查看最近10局游戏记录
+- `/gameinfo <游戏编号>` - 查看指定游戏的详细信息
+- `/help` - 显示帮助信息
 
 ### 🎯 游戏规则
 - **下注类型**：
-  - `banker` - 庄家胜（1:1赔率）。
-  - `player` - 闲家胜（1:1赔率）。
-  - `tie` - 和局（8:1赔率）。
-- **补牌规则**：严格按照百家乐标准规则（闲家0-5点补牌，庄家根据规则判断）。
-- **点数计算**：使用 Telegram 骰子（1-6点）模拟牌值，总和取个位数。
-- **天牌规则**：庄家或闲家前两张牌总和为8或9点，直接结束游戏。
+  - `banker` - 庄家胜（1:1赔率）
+  - `player` - 闲家胜（1:1赔率）
+  - `tie` - 和局（8:1赔率）
+- **补牌规则**：严格按照百家乐标准规则（闲家0-5点补牌，庄家根据规则判断）
+- **点数计算**：使用 Telegram 骰子（1-6点）模拟牌值，总和取个位数
+- **天牌规则**：庄家或闲家前两张牌总和为8或9点，直接结束游戏
 
 ### 🔧 HTTP API 接口
-- `GET /` - 返回服务状态。
-- `GET /health` - 健康检查。
-- `POST /webhook` - 处理 Telegram Webhook 请求。
-- `POST /auto-game/:chatId` - 为指定群组自动开始游戏。
-- `POST /enable-auto/:chatId` - 启用自动游戏模式。
-- `POST /disable-auto/:chatId` - 禁用自动游戏模式。
-- `POST /process-game/:chatId` - 处理超时或手动触发的游戏。
-- `GET /game-status/:chatId` - 获取指定群组的游戏状态。
-- `GET /game-history/:chatId` - 获取指定群组的最近游戏记录（最多100局）。
-- `GET /game-detail/:gameNumber` - 获取指定游戏编号的详细信息。
-- `POST /send-message` - 向指定群组发送消息。
-- `POST /set-webhook` - 设置 Telegram Webhook。
+- `GET /` - 返回服务状态
+- `GET /health` - 健康检查
+- `POST /webhook` - 处理 Telegram Webhook 请求
+- `POST /auto-game/:chatId` - 为指定群组自动开始游戏
+- `POST /enable-auto/:chatId` - 启用自动游戏模式
+- `POST /disable-auto/:chatId` - 禁用自动游戏模式
+- `POST /process-game/:chatId` - 处理超时或手动触发的游戏
+- `GET /game-status/:chatId` - 获取指定群组的游戏状态
+- `POST /place-bet/:chatId` - 为指定群组下注
+- `GET /game-history/:chatId` - 获取指定群组的最近游戏记录（最多10局）
+- `GET /game-detail/:gameNumber` - 获取指定游戏编号的详细信息
+- `POST /send-message` - 向指定群组发送消息
+- `POST /set-webhook` - 设置 Telegram Webhook
+- `GET /config` - 获取系统配置信息
+- `GET /stats` - 获取服务统计信息
+- `GET /commands` - 获取可用命令列表
 
 ## 🏗️ 系统架构
 
 ```mermaid
 graph TB
-    subgraph "Telegram"
-        TG[Telegram Groups]
+    subgraph "Telegram 平台"
+        TG[Telegram 群组]
         TGAPI[Telegram Bot API]
     end
 
-    subgraph "Cloudflare Workers Platform"
-        subgraph "Main Worker"
-            MW[Main Worker Entry]
-            HONO[Hono HTTP Router]
-            API[API Handlers]
-            CMD[Command Handlers]
-            BOT[Bot Service]
+    subgraph "Cloudflare Workers 平台"
+        subgraph "主 Worker"
+            MW[主 Worker 入口]
+            HONO[Hono HTTP 路由器]
+            API[API 处理器]
+            CMD[命令处理器]
+            SC[服务容器]
         end
 
-        subgraph "Durable Objects"
-            DO1[Game Room 1<br/>Chat ID: -1001]
-            DO2[Game Room 2<br/>Chat ID: -1002]
-            DO3[Game Room N<br/>Chat ID: -100N]
+        subgraph "服务层"
+            BOT[Bot 服务]
+            LOGGER[日志服务]
+            STORAGE[存储服务]
+        end
+
+        subgraph "持久化对象 (Durable Objects)"
+            DO1[游戏房间 1<br/>聊天ID: -1001]
+            DO2[游戏房间 2<br/>聊天ID: -1002]
+            DO3[游戏房间 N<br/>聊天ID: -100N]
             
-            subgraph "Game Room Internal"
-                GS[Game Service]
-                DS[Dice Service]
-                MQ[Message Queue]
-                ST[State Management]
+            subgraph "游戏房间服务"
+                GS[游戏服务]
+                DS[骰子服务]
+                MQ[消息队列服务]
+                TS[定时器服务]
             end
         end
 
-        subgraph "Storage Layer"
-            KV[Cloudflare KV<br/>Game Records]
-            DOS[DO Storage<br/>Game State]
+        subgraph "存储层"
+            KV[Cloudflare KV<br/>游戏记录存储]
+            DOS[DO 存储<br/>游戏状态存储]
         end
     end
 
-    subgraph "External APIs"
-        EXT[External API Calls]
-    end
-
-    %% User interactions
-    TG -->|Webhook| MW
+    %% 用户交互流程
+    TG -->|Webhook 回调| MW
     MW --> HONO
     HONO --> API
     HONO --> CMD
@@ -102,36 +108,43 @@ graph TB
     BOT --> TGAPI
     TGAPI --> TG
 
-    %% Game room routing
-    API -->|Route by Chat ID| DO1
-    API -->|Route by Chat ID| DO2
-    API -->|Route by Chat ID| DO3
-    CMD -->|Route by Chat ID| DO1
+    %% 服务容器连接
+    API --> SC
+    CMD --> SC
+    SC --> BOT
+    SC --> LOGGER
+    SC --> STORAGE
 
-    %% Game room internals
+    %% 游戏房间路由
+    API -->|根据聊天ID路由| DO1
+    API -->|根据聊天ID路由| DO2
+    API -->|根据聊天ID路由| DO3
+    CMD -->|根据聊天ID路由| DO1
+
+    %% 游戏房间内部连接
     DO1 --> GS
     GS --> DS
     DS --> MQ
-    GS --> ST
+    GS --> TS
+    MQ --> BOT
     
-    %% Storage connections
+    %% 存储连接
     GS --> KV
-    ST --> DOS
+    DOS --> KV
     
-    %% External connections
-    BOT --> EXT
-    DS --> TGAPI
+    %% 外部API连接
+    BOT --> TGAPI
 
-    %% Styling
+    %% 样式定义
     classDef telegram fill:#0088cc,stroke:#fff,color:#fff
     classDef worker fill:#f96,stroke:#fff,color:#fff
     classDef storage fill:#9f9,stroke:#333,color:#333
     classDef durable fill:#ff9,stroke:#333,color:#333
 
     class TG,TGAPI telegram
-    class MW,HONO,API,CMD,BOT worker
+    class MW,HONO,API,CMD,SC,BOT,LOGGER,STORAGE worker
     class KV,DOS storage
-    class DO1,DO2,DO3,GS,DS,MQ,ST durable
+    class DO1,DO2,DO3,GS,DS,MQ,TS durable
 ```
 
 ## 🔄 消息队列系统
@@ -145,6 +158,8 @@ graph TB
 - **骰子动画管理**：专门处理骰子发送和结果公布的完整流程
 - **容错处理**：网络失败时自动重试，最终使用随机值保证游戏继续
 - **游戏隔离**：每个游戏开始时重置消息序列，避免跨游戏干扰
+- **优先级处理**：支持消息优先级调整
+- **中间件支持**：可扩展的消息处理管道
 
 ### 消息类型
 
@@ -155,6 +170,7 @@ interface QueuedMessage {
   sequenceId: number;      // 严格序列号
   type: 'text' | 'dice';   // 消息类型
   isBlocking?: boolean;    // 是否阻塞后续消息
+  priority?: number;       // 优先级（数字越小优先级越高）
   timestamp: number;       // 创建时间戳
   retries?: number;        // 重试次数
 }
@@ -163,7 +179,8 @@ interface DiceMessage extends QueuedMessage {
   type: 'dice';
   playerType: string;      // 'banker' 或 'player'
   cardIndex: number;       // 第几张牌 (1,2,3)
-  onDiceResult?: (value: number) => void; // 结果回调
+  emoji: string;           // 骰子表情符号
+  onDiceResult?: (value: number) => Promise<void>; // 结果回调
 }
 ```
 
@@ -173,74 +190,40 @@ interface DiceMessage extends QueuedMessage {
 flowchart TD
     A[游戏开始] --> B[重置消息序列计数器]
     B --> C[消息入队<br/>分配序列号]
-    C --> D[按序列号排序队列]
+    C --> D[按优先级和序列号排序]
     D --> E{队列是否为空?}
-    E -->|否| F[取出序列号最小的消息]
+    E -->|否| F[取出优先级最高的消息]
     F --> G{消息类型?}
     
     G -->|文本消息| H[发送文本消息]
     G -->|骰子消息| I[发送骰子动画]
     
-    H --> J[等待固定间隔<br/>1.2秒]
+    H --> J[等待配置间隔<br/>MESSAGE_DELAY_MS]
     
-    I --> K[等待动画完成<br/>4秒]
+    I --> K[等待动画完成<br/>DICE_ANIMATION_WAIT_MS]
     K --> L[发送点数结果]
     L --> M[调用结果回调]
-    M --> J
+    M --> N[等待结果延迟<br/>DICE_RESULT_DELAY_MS]
+    N --> J
     
     J --> E
-    E -->|是| N[队列处理完成]
+    E -->|是| O[队列处理完成]
     
     %% 错误处理
-    H -->|失败| O{重试次数<3?}
-    I -->|失败| O
-    O -->|是| P[延迟重试<br/>重新入队]
-    O -->|否| Q[使用随机值<br/>继续游戏]
-    P --> E
-    Q --> J
+    H -->|失败| P{重试次数<最大值?}
+    I -->|失败| P
+    P -->|是| Q[指数退避重试<br/>重新入队]
+    P -->|否| R[使用随机值<br/>继续游戏]
+    Q --> E
+    R --> J
 
     classDef process fill:#e1f5fe,stroke:#01579b,color:#000
     classDef decision fill:#fff3e0,stroke:#e65100,color:#000
     classDef error fill:#ffebee,stroke:#c62828,color:#000
     
-    class A,B,C,D,F,H,I,K,L,M,J,N process
-    class E,G,O decision
-    class P,Q error
-```
-
-### 阻塞与非阻塞机制
-
-**阻塞消息（Blocking Messages）**：
-- 骰子消息：必须等待动画完成和结果公布
-- 关键游戏消息：下注汇总、开牌提示、最终结果
-- 用途：确保关键信息按序到达用户
-
-**非阻塞消息（Non-blocking Messages）**：
-- 倒计时提醒：不影响游戏主流程
-- 状态更新：实时信息推送
-- 用途：提升用户体验，不阻塞游戏进度
-
-### 使用示例
-
-```typescript
-// 阻塞消息：等待发送完成
-await this.diceService.sendBlockingMessage(
-  chatId,
-  "🎲 **开牌阶段开始！**"
-);
-
-// 非阻塞消息：立即返回
-this.diceService.sendMessage(
-  chatId,
-  "⏰ 下注倒计时：10秒！"
-);
-
-// 骰子消息：等待完整流程
-const diceValue = await this.diceService.rollDice(
-  chatId, 
-  'banker', 
-  1
-);
+    class A,B,C,D,F,H,I,K,L,M,N,J,O process
+    class E,G,P decision
+    class Q,R error
 ```
 
 ## 🎴 发牌顺序详解
@@ -264,7 +247,7 @@ sequenceDiagram
     B->>Q: 入队：庄家骰子1（阻塞）
     Q->>T: 发送骰子动画 🎲
     T->>U: 显示骰子滚动
-    Note over Q,T: 等待4秒动画
+    Note over Q,T: 等待DICE_ANIMATION_WAIT_MS
     Q->>T: 🎯 庄家第1张牌：X点
     T->>U: 显示点数结果
     
@@ -272,7 +255,7 @@ sequenceDiagram
     B->>Q: 入队：闲家骰子1（阻塞）
     Q->>T: 发送骰子动画 🎲
     T->>U: 显示骰子滚动
-    Note over Q,T: 等待4秒动画
+    Note over Q,T: 等待DICE_ANIMATION_WAIT_MS
     Q->>T: 🎯 闲家第1张牌：Y点
     T->>U: 显示点数结果
     
@@ -280,7 +263,7 @@ sequenceDiagram
     B->>Q: 入队：庄家骰子2（阻塞）
     Q->>T: 发送骰子动画 🎲
     T->>U: 显示骰子滚动
-    Note over Q,T: 等待4秒动画
+    Note over Q,T: 等待DICE_ANIMATION_WAIT_MS
     Q->>T: 🎯 庄家第2张牌：Z点
     T->>U: 显示点数结果
     
@@ -288,7 +271,7 @@ sequenceDiagram
     B->>Q: 入队：闲家骰子2（阻塞）
     Q->>T: 发送骰子动画 🎲
     T->>U: 显示骰子滚动
-    Note over Q,T: 等待4秒动画
+    Note over Q,T: 等待DICE_ANIMATION_WAIT_MS
     Q->>T: 🎯 闲家第2张牌：W点
     T->>U: 显示点数结果
     
@@ -306,16 +289,18 @@ sequenceDiagram
         B->>Q: 入队：闲家骰子3（阻塞）
         Q->>T: 发送骰子动画 🎲
         T->>U: 显示骰子滚动
-        Note over Q,T: 等待4秒动画
+        Note over Q,T: 等待DICE_ANIMATION_WAIT_MS
         Q->>T: 🎯 闲家第3张牌：V点
         T->>U: 显示点数结果
         
-        B->>Q: 入队：庄家骰子3（阻塞）
-        Q->>T: 发送骰子动画 🎲
-        T->>U: 显示骰子滚动
-        Note over Q,T: 等待4秒动画
-        Q->>T: 🎯 庄家第3张牌：U点
-        T->>U: 显示点数结果
+        opt 庄家也需要补牌
+            B->>Q: 入队：庄家骰子3（阻塞）
+            Q->>T: 发送骰子动画 🎲
+            T->>U: 显示骰子滚动
+            Note over Q,T: 等待DICE_ANIMATION_WAIT_MS
+            Q->>T: 🎯 庄家第3张牌：U点
+            T->>U: 显示点数结果
+        end
     else 天牌
         B->>Q: 入队：天牌提示（阻塞）
         Q->>T: 🎯 天牌！无需补牌！
@@ -326,74 +311,6 @@ sequenceDiagram
     B->>Q: 入队：最终结果（阻塞）
     Q->>T: 🎯 第XX局开牌结果
     T->>U: 显示胜负结果
-```
-
-### 发牌时间轴
-
-| 阶段 | 消息类型 | 内容 | 等待时间 | 累计时间 |
-|------|----------|------|----------|----------|
-| 1 | 阻塞文本 | 🎲 开牌阶段开始！ | 1.2s | 1.2s |
-| 2 | 阻塞骰子 | 庄家第1张牌 | 4s+1s | 6.2s |
-| 3 | 阻塞骰子 | 闲家第1张牌 | 4s+1s | 11.2s |
-| 4 | 阻塞骰子 | 庄家第2张牌 | 4s+1s | 16.2s |
-| 5 | 阻塞骰子 | 闲家第2张牌 | 4s+1s | 21.2s |
-| 6 | 阻塞文本 | 📊 前两张牌点数汇总 | 1.2s | 22.4s |
-| 7 | 阻塞文本 | 补牌提示（如需要） | 1.2s | 23.6s |
-| 8 | 阻塞骰子 | 第3张牌（如需要） | 4s+1s | 28.6s |
-| 9 | 阻塞文本 | 🎯 最终开牌结果 | 1.2s | 29.8s |
-
-### 关键实现代码
-
-```typescript
-// 严格按序发牌
-private async dealCards(): Promise<void> {
-  console.log('Starting card dealing with strict sequence...');
-
-  try {
-    // 🔥 严格按顺序发牌，每张牌等待完成
-    console.log('🎲 Dealing banker card 1...');
-    const bankerCard1 = await this.diceService.rollDice(this.game.chatId, 'banker', 1);
-    this.game.cards.banker.push(bankerCard1);
-
-    console.log('🎲 Dealing player card 1...');
-    const playerCard1 = await this.diceService.rollDice(this.game.chatId, 'player', 1);
-    this.game.cards.player.push(playerCard1);
-
-    console.log('🎲 Dealing banker card 2...');
-    const bankerCard2 = await this.diceService.rollDice(this.game.chatId, 'banker', 2);
-    this.game.cards.banker.push(bankerCard2);
-
-    console.log('🎲 Dealing player card 2...');
-    const playerCard2 = await this.diceService.rollDice(this.game.chatId, 'player', 2);
-    this.game.cards.player.push(playerCard2);
-
-    // 🔥 发牌完成后再发送汇总，使用阻塞消息
-    await this.diceService.sendBlockingMessage(
-      this.game.chatId,
-      `📊 **前两张牌点数:**\n` +
-      `🏦 庄家: ${this.game.cards.banker.join(' + ')} = **${bankerSum} 点**\n` +
-      `👤 闲家: ${this.game.cards.player.join(' + ')} = **${playerSum} 点**`
-    );
-
-    // 判断是否需要补牌...
-  } catch (error) {
-    console.error('Deal cards error:', error);
-    throw error;
-  }
-}
-
-// 骰子发送的完整流程
-async rollDice(chatId: string, playerType: string, cardIndex: number): Promise<number> {
-  try {
-    // 使用消息队列处理骰子，严格按顺序
-    const diceValue = await this.messageQueue.enqueueDice(chatId, playerType, cardIndex);
-    return diceValue;
-  } catch (error) {
-    // 最终失败时使用随机值
-    const fallbackValue = Math.floor(Math.random() * 6) + 1;
-    return fallbackValue;
-  }
-}
 ```
 
 ## 快速开始
@@ -417,10 +334,10 @@ wrangler login
 
 ### 2. 创建 Telegram Bot
 
-1. 在 Telegram 中找到 [@BotFather](https://t.me/botfather)。
-2. 发送 `/newbot` 创建新 Bot。
-3. 设置 Bot 名称和用户名。
-4. 获取 Bot Token。
+1. 在 Telegram 中找到 [@BotFather](https://t.me/botfather)
+2. 发送 `/newbot` 创建新 Bot
+3. 设置 Bot 名称和用户名
+4. 获取 Bot Token
 5. 设置 Bot 命令菜单：
    ```
    /setcommands
@@ -442,7 +359,7 @@ wrangler login
 
 ### 3. 配置 wrangler.jsonc
 
-更新 `wrangler.jsonc` 文件，配置基础信息和时间参数：
+创建 `wrangler.jsonc` 文件：
 
 ```jsonc
 {
@@ -450,31 +367,33 @@ wrangler login
   "name": "bc-services",
   "main": "src/index.ts",
   "compatibility_date": "2025-07-19",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "vars": {
     // 基础配置
     "BOT_TOKEN": "your-bot-token-here",
-    "ALLOWED_CHAT_IDS": "-1001234567890",
+    "ALLOWED_CHAT_IDS": "-1002509450778",
     
     // ===== 游戏时间配置 =====
     
     // 🎮 核心游戏时间
-    "BETTING_DURATION_MS": "30000",           // 下注阶段持续时间 (30秒)
-    "AUTO_GAME_INTERVAL_MS": "10000",         // 自动游戏间隔时间 (10秒)
+    "BETTING_DURATION_MS": "30000",           // 下注阶段持续时间 (30秒) - 用户下注的总时长
+    "AUTO_GAME_INTERVAL_MS": "10000",         // 自动游戏间隔时间 (10秒) - 每局游戏结束后到下一局开始的等待时间
     
     // 🎲 骰子相关时间
-    "DICE_ROLL_TIMEOUT_MS": "10000",          // 骰子投掷超时 (10秒)
-    "DICE_ROLL_MAX_RETRIES": "2",             // 骰子投掷最大重试次数
-    "DICE_ANIMATION_WAIT_MS": "4000",         // 骰子动画等待时间 (4秒)
-    "DICE_RESULT_DELAY_MS": "1000",           // 结果发送延迟 (1秒)
+    "DICE_ROLL_TIMEOUT_MS": "10000",          // 骰子投掷超时 (10秒) - 单次骰子API调用的最大等待时间
+    "DICE_ROLL_MAX_RETRIES": "2",             // 骰子投掷最大重试次数 - 失败后重试的次数
+    "DICE_ANIMATION_WAIT_MS": "4000",         // 骰子动画等待时间 (4秒) - 等待骰子动画播放完成的时间
+    "DICE_RESULT_DELAY_MS": "1000",           // 结果发送延迟 (1秒) - 发送点数结果后的停顿时间
     
     // ⏱️ 流程控制时间
-    "CARD_DEAL_DELAY_MS": "500",              // 发牌间隔 (0.5秒)
-    "MESSAGE_DELAY_MS": "2000",               // 消息发送间隔 (2秒)
+    "CARD_DEAL_DELAY_MS": "500",              // 发牌间隔 (0.5秒) - 每张牌之间的等待时间，让用户看清楚发牌过程
+    "MESSAGE_DELAY_MS": "2000",               // 消息发送间隔 (2秒) - 重要消息之间的间隔，避免刷屏
     
     // 🔒 系统保护时间
-    "GLOBAL_PROCESS_TIMEOUT_MS": "90000",     // 游戏处理全局超时 (90秒)
-    "CLEANUP_DELAY_MS": "30000"               // 清理延迟时间 (30秒)
+    "GLOBAL_PROCESS_TIMEOUT_MS": "90000",     // 游戏处理全局超时 (90秒) - 整个游戏处理的最大时长，防止卡死
+    "CLEANUP_DELAY_MS": "30000"               // 清理延迟时间 (30秒) - 游戏结束后多久开始清理资源
   },
   "kv_namespaces": [
     {
@@ -482,6 +401,10 @@ wrangler login
       "id": "your-kv-namespace-id"
     }
   ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
   "durable_objects": {
     "bindings": [
       {
@@ -493,7 +416,9 @@ wrangler login
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["BaccaratGameRoom"]
+      "new_sqlite_classes": [
+        "BaccaratGameRoom"
+      ]
     }
   ]
 }
@@ -521,110 +446,234 @@ npm run deploy
 curl -X POST "https://your-worker.workers.dev/set-webhook" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://your-worker.workers.dev/webhook"}'
+```
 
-# api telegram
+### 6. Telegram API 管理
+
+```bash
+# 查看当前 Webhook 信息
 curl -X GET "https://api.telegram.org/bot<token>/getWebhookInfo"
 
+# 删除现有 Webhook
 curl -X GET "https://api.telegram.org/bot<token>/deleteWebhook"
 
+# 设置新的 Webhook
 curl -X POST "https://api.telegram.org/bot<token>/setWebhook" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://your-worker.workers.dev/webhook"}'
 ```
 
-## 游戏流程详解
+## 项目结构
 
-### 1. 开始游戏
 ```
-管理员或成员: /newgame
-Bot: 🎲 第 20250719143001 局百家乐开始！
-     💰 下注时间：30秒
-     📝 下注格式：/bet banker 100
-     ⏰ 系统将自动倒计时和开牌
-     💡 或使用 /process 立即开牌
-```
-
-### 2. 下注阶段（精准倒计时）
-```
-玩家A: /bet banker 100
-Bot: ✅ 玩家A 下注成功！💰 庄家 100 点
-     👥 当前参与人数：1
-     ⏰ 剩余时间：25 秒
-
-玩家B: /bet player 50
-Bot: ✅ 玩家B 下注成功！💰 闲家 50 点
-     👥 当前参与人数：2
-     ⏰ 剩余时间：20 秒
-
-# 系统自动倒计时提醒
-Bot: ⏰ 下注倒计时：20秒！
-     👥 当前参与人数：2
-     💡 抓紧时间下注哦~
-
-Bot: ⏰ 下注倒计时：10秒！
-     👥 当前参与人数：2
-     💡 抓紧时间下注哦~
-
-Bot: ⏰ 下注倒计时：5秒！
-     👥 当前参与人数：2
-     💡 抓紧时间下注哦~
-```
-
-### 3. 沉浸式开牌体验
-30秒后或手动 `/process`：
-```
-Bot: ⛔️ 第 20250719143001 局停止下注！
-     📊 下注汇总：
-     🏦 庄家: 100 点
-     👤 闲家: 50 点
-     
-     🎲 开牌阶段开始！
-     🃏 庄家和闲家各发两张牌...
-
-# 发送骰子动画
-Bot: 🎲 (骰子动画滚动 4秒)
-
-# 4秒后公布结果
-Bot: 🎯 🏦 庄家第1张牌开出：4 点
-
-# 短暂停顿 1秒后继续
-Bot: 🎲 (骰子动画滚动 4秒)
-Bot: 🎯 👤 闲家第1张牌开出：6 点
-
-Bot: 🎲 (骰子动画滚动 4秒)
-Bot: 🎯 🏦 庄家第2张牌开出：3 点
-
-Bot: 🎲 (骰子动画滚动 4秒)
-Bot: 🎯 👤 闲家第2张牌开出：2 点
-     
-     📊 前两张牌点数：
-     🏦 庄家: 4 + 3 = 7 点
-     👤 闲家: 6 + 2 = 8 点
-     
-     🎯 天牌！无需补牌！
-     
-     🎯 第 20250719143001 局开牌结果
-     🏦 庄家最终点数: 7 点
-     👤 闲家最终点数: 8 点
-     👤 闲家胜！
-     
-     ✅ 获胜者：
-     玩家B: +50
-     
-     ❌ 失败者：
-     玩家A: -100
-     
-     🔄 自动游戏模式：10秒后开始下一局
+├── src/
+│   ├── index.ts                          # 主程序入口
+│   ├── config/
+│   │   └── constants.ts                  # 时间配置管理
+│   ├── durable-objects/
+│   │   └── baccaratGameRoom.ts          # 游戏房间 Durable Object
+│   ├── handlers/
+│   │   ├── apiHandlers.ts               # HTTP API 路由处理
+│   │   ├── commandHandlers.ts           # Bot 命令处理
+│   │   └── index.ts                     # 处理器导出
+│   ├── services/
+│   │   ├── serviceContainer.ts          # 服务容器（依赖注入）
+│   │   ├── base/
+│   │   │   └── baseService.ts           # 基础服务类
+│   │   ├── core/
+│   │   │   ├── botService.ts            # Telegram Bot 服务
+│   │   │   └── loggerService.ts         # 日志服务
+│   │   ├── storage/
+│   │   │   └── storageService.ts        # KV 存储服务
+│   │   ├── messaging/
+│   │   │   └── messageQueueService.ts   # 消息队列服务
+│   │   ├── game/
+│   │   │   ├── gameService.ts           # 核心游戏逻辑
+│   │   │   ├── diceService.ts           # 骰子发送服务
+│   │   │   └── timerService.ts          # 定时器服务
+│   │   └── index.ts                     # 服务导出
+│   ├── types/
+│   │   ├── api.ts                       # API 类型定义
+│   │   ├── base.ts                      # 基础类型
+│   │   ├── env.ts                       # 环境变量类型
+│   │   ├── game.ts                      # 游戏相关类型
+│   │   ├── services.ts                  # 服务相关类型
+│   │   ├── utils.ts                     # 工具类型
+│   │   └── index.ts                     # 类型导出
+│   └── utils/
+│       ├── gameUtils.ts                 # 游戏工具函数
+│       ├── messageUtils.ts              # 消息格式化工具
+│       ├── timeUtils.ts                 # 时间工具函数
+│       └── index.ts                     # 工具导出
+├── package.json                         # 项目依赖
+├── wrangler.jsonc                       # Cloudflare Workers 配置
+├── tsconfig.json                        # TypeScript 配置
+└── README.md                            # 项目说明文档
 ```
 
-### 4. 自动游戏模式
+## 服务架构设计
+
+### 依赖注入容器
+
+项目采用了完整的依赖注入架构，通过 `ServiceContainer` 管理所有服务实例：
+
+```typescript
+// 服务容器创建
+const container = ServiceContainer.create(env, bot, state);
+
+// 服务获取（单例模式）
+const gameService = container.getService(GameService);
+const diceService = container.getService(DiceService);
 ```
-管理员: /autogame
-Bot: 🤖 自动游戏模式已开启！
-     🔄 游戏将持续自动进行
-     ⏰ 每局间隔10秒
-     💡 即使无人下注也会继续发牌
-     🛑 使用 /stopauto 关闭自动模式
+
+### 服务层次结构
+
+1. **基础服务层** (`base/`)
+   - `BaseService`: 所有服务的基类，提供日志、生命周期管理
+
+2. **核心服务层** (`core/`)
+   - `BotService`: Telegram Bot API 封装
+   - `LoggerService`: 统一日志管理
+
+3. **存储服务层** (`storage/`)
+   - `StorageService`: KV 存储操作
+
+4. **消息服务层** (`messaging/`)
+   - `MessageQueueService`: 消息队列管理
+
+5. **游戏业务层** (`game/`)
+   - `GameService`: 核心游戏逻辑
+   - `DiceService`: 骰子投掷和动画
+   - `TimerService`: 定时器管理
+
+### 上下文管理
+
+所有服务共享统一的上下文信息：
+
+```typescript
+interface ServiceContext {
+  env: Env;                    // 环境变量
+  bot: Bot;                    // Bot 实例
+  state?: DurableObjectState;  // DO 状态（可选）
+  constants: Constants;        // 配置常量
+  gameId?: string;            // 当前游戏ID
+  chatId?: string;            // 当前聊天ID
+  userId?: string;            // 当前用户ID
+}
+```
+
+## 核心技术特性
+
+### 游戏状态管理
+```typescript
+enum GameState {
+  Idle = 'idle',              // 空闲
+  Betting = 'betting',        // 下注中
+  Processing = 'processing',  // 处理中
+  Revealing = 'revealing',    // 开牌中
+  Finished = 'finished'       // 已结束
+}
+```
+
+### 下注处理逻辑
+
+支持多种下注模式：
+- **累加下注**：同类型下注累加金额
+- **替换下注**：不同类型下注互相替换
+- **限额检查**：单次下注和用户总下注限制
+
+```typescript
+// 下注响应示例
+{
+  success: true,
+  amount: 150,              // 最终下注金额
+  isAccumulated: true,      // 是否为累加下注
+  previousAmount: 50,       // 之前的下注金额
+  addedAmount: 100,         // 新增的下注金额
+  totalBetsAmount: 500,     // 当前游戏总下注金额
+  totalBetsCount: 8,        // 当前游戏总下注次数
+  usersCount: 3,            // 参与下注的用户数
+  remainingTime: 25         // 剩余下注时间(秒)
+}
+```
+
+### 精准倒计时系统
+
+```typescript
+private setupCountdownTimers(chatId: string, gameNumber: string): void {
+  const gameEndTime = this.game.bettingEndTime;
+  const intervals = [20, 10, 5]; // 提醒时间点
+
+  intervals.forEach(seconds => {
+    const reminderTime = gameEndTime - (seconds * 1000);
+    const timeToReminder = reminderTime - Date.now();
+
+    if (timeToReminder > 0) {
+      this.timerService.createGameTimer(
+        TimerType.COUNTDOWN,
+        `countdown-${seconds}s`,
+        timeToReminder,
+        () => this.sendCountdownMessage(chatId, seconds)
+      );
+    }
+  });
+}
+```
+
+### 消息队列核心实现
+
+```typescript
+// 严格序列处理
+private async processQueue(): Promise<void> {
+  this.processing = true;
+  
+  while (this.queue.length > 0) {
+    const message = this.queue.shift()!;
+    
+    try {
+      await this.processMessage(message);
+      await sleep(this.queueConfig.messageInterval);
+    } catch (error) {
+      await this.handleMessageError(message, error);
+    }
+  }
+  
+  this.processing = false;
+}
+```
+
+### 补牌规则实现
+
+完整的百家乐补牌逻辑：
+
+```typescript
+private async handleThirdCard(bankerSum: number, playerSum: number): Promise<void> {
+  let playerThirdCard: number | null = null;
+
+  // 闲家补牌逻辑
+  if (playerSum <= 5) {
+    playerThirdCard = await this.diceService.rollDice(chatId, 'player', 3);
+    this.game.cards.player.push(playerThirdCard);
+  }
+
+  // 庄家补牌逻辑
+  let bankerNeedCard = false;
+  if (playerThirdCard === null) {
+    bankerNeedCard = bankerSum <= 5;
+  } else {
+    // 根据庄家点数和闲家第三张牌决定
+    if (bankerSum <= 2) bankerNeedCard = true;
+    else if (bankerSum === 3 && playerThirdCard !== 8) bankerNeedCard = true;
+    else if (bankerSum === 4 && [2,3,4,5,6,7].includes(playerThirdCard)) bankerNeedCard = true;
+    else if (bankerSum === 5 && [4,5,6,7].includes(playerThirdCard)) bankerNeedCard = true;
+    else if (bankerSum === 6 && [6,7].includes(playerThirdCard)) bankerNeedCard = true;
+  }
+
+  if (bankerNeedCard) {
+    const bankerThirdCard = await this.diceService.rollDice(chatId, 'banker', 3);
+    this.game.cards.banker.push(bankerThirdCard);
+  }
+}
 ```
 
 ## 时间参数配置详解
@@ -658,26 +707,144 @@ Bot: 🤖 自动游戏模式已开启！
 ### 🎯 时间配置优化建议
 
 **快节奏游戏设置**：
-```jsonc
-"BETTING_DURATION_MS": "20000",        // 20秒下注
-"AUTO_GAME_INTERVAL_MS": "5000",       // 5秒间隔
-"DICE_ANIMATION_WAIT_MS": "3000",      // 3秒动画
-"MESSAGE_DELAY_MS": "1500"             // 1.5秒消息间隔
+```toml
+BETTING_DURATION_MS = "20000"        # 20秒下注
+AUTO_GAME_INTERVAL_MS = "5000"       # 5秒间隔
+DICE_ANIMATION_WAIT_MS = "3000"      # 3秒动画
+MESSAGE_DELAY_MS = "1500"            # 1.5秒消息间隔
 ```
 
 **慢节奏体验设置**：
-```jsonc
-"BETTING_DURATION_MS": "45000",        // 45秒下注
-"AUTO_GAME_INTERVAL_MS": "15000",      // 15秒间隔
-"DICE_ANIMATION_WAIT_MS": "5000",      // 5秒动画
-"MESSAGE_DELAY_MS": "3000"             // 3秒消息间隔
+```toml
+BETTING_DURATION_MS = "45000"        # 45秒下注
+AUTO_GAME_INTERVAL_MS = "15000"      # 15秒间隔
+DICE_ANIMATION_WAIT_MS = "5000"      # 5秒动画
+MESSAGE_DELAY_MS = "3000"            # 3秒消息间隔
 ```
 
 **网络环境差的设置**：
-```jsonc
-"DICE_ROLL_TIMEOUT_MS": "15000",       // 15秒超时
-"DICE_ROLL_MAX_RETRIES": "3",          // 3次重试
-"GLOBAL_PROCESS_TIMEOUT_MS": "120000"  // 2分钟总超时
+```toml
+DICE_ROLL_TIMEOUT_MS = "15000"       # 15秒超时
+DICE_ROLL_MAX_RETRIES = "3"          # 3次重试
+GLOBAL_PROCESS_TIMEOUT_MS = "120000" # 2分钟总超时
+```
+
+## 游戏流程详解
+
+### 1. 开始游戏
+```
+管理员或成员: /newgame
+Bot: 🎮 新游戏已开始！
+     游戏编号: 20250719143001
+     ⏰ 下注时间: 30秒
+     💰 使用 /bet 命令进行下注
+```
+
+### 2. 下注阶段（精准倒计时）
+```
+玩家A: /bet banker 100
+Bot: ✅ 下注成功！
+     类型: 庄家
+     金额: 100 点
+     当前总下注: 100 点
+
+玩家B: /bet player 50
+Bot: ✅ 下注成功！
+     类型: 闲家
+     金额: 50 点
+     当前总下注: 150 点
+
+# 系统自动倒计时提醒
+Bot: ⏰ **下注倒计时：20秒！**
+     👥 当前参与人数：2
+     💡 抓紧时间下注哦~
+
+Bot: ⏰ **下注倒计时：10秒！**
+     👥 当前参与人数：2
+     💡 抓紧时间下注哦~
+
+Bot: ⏰ **下注倒计时：5秒！**
+     👥 当前参与人数：2
+     💡 抓紧时间下注哦~
+```
+
+### 3. 沉浸式开牌体验
+30秒后或手动 `/process`：
+```
+Bot: ⛔ **第 20250719143001 局停止下注！**
+
+     📋 **第 20250719143001 局下注汇总**
+     👥 参与人数: 2
+     💰 总下注: 150 点
+     
+     📊 **各项下注:**
+     🏦 庄家: 100 点
+     👤 闲家: 50 点
+     🤝 和局: 0 点
+     
+     🎲 准备开牌...
+
+Bot: 🎲 **开牌阶段开始！**
+     🃏 庄家和闲家各发两张牌...
+
+# 发送骰子动画
+Bot: 🎲 (骰子动画滚动 4秒)
+
+# 4秒后公布结果
+Bot: 🎯 **🏦 庄家第1张牌开出：4 点**
+
+# 继续发牌
+Bot: 🎲 (骰子动画滚动 4秒)
+Bot: 🎯 **👤 闲家第1张牌开出：6 点**
+
+Bot: 🎲 (骰子动画滚动 4秒)
+Bot: 🎯 **🏦 庄家第2张牌开出：3 点**
+
+Bot: 🎲 (骰子动画滚动 4秒)
+Bot: 🎯 **👤 闲家第2张牌开出：2 点**
+     
+Bot: 📊 **前两张牌点数:**
+     🏦 庄家: 4 + 3 = **7 点**
+     👤 闲家: 6 + 2 = **8 点**
+     
+Bot: 🎯 **天牌！无需补牌！**
+     
+Bot: 🎯 **第 20250719143001 局开牌结果**
+     🏦 庄家最终点数: 7 点
+     👤 闲家最终点数: 8 点
+     
+     🏆 **👤 闲家胜！**
+     
+     ✅ **获胜者:**
+     玩家B: +50
+     
+     ❌ **失败者:**
+     玩家A: -100
+     
+     📊 **本局统计:**
+     💰 总赔付: 50 点
+     💸 总收取: 100 点
+     📈 庄家盈亏: +50 点
+     
+     🎮 **手动游戏模式**
+     💡 使用 /newgame 开始新游戏
+     🤖 使用 /autogame 开启自动模式
+```
+
+### 4. 自动游戏模式
+```
+管理员: /autogame
+Bot: ✅ 自动游戏模式已启用
+     🤖 **自动游戏 - 第 20250719143002 局开始！**
+     💰 下注时间：30秒
+     📝 下注格式：/bet banker 100
+     ⏰ 30秒后将自动处理游戏...
+     🔄 游戏将持续自动进行
+
+# 游戏结束时
+Bot: 🤖 **自动游戏模式进行中**
+     ⏰ 10秒后自动开始下一局
+     🛑 使用 /stopauto 关闭自动模式
 ```
 
 ## API 使用示例
@@ -699,11 +866,27 @@ curl -X POST "https://your-worker.workers.dev/disable-auto/-1001234567890" \
 # 检查游戏状态
 curl "https://your-worker.workers.dev/game-status/-1001234567890"
 
+# 为指定群组下注
+curl -X POST "https://your-worker.workers.dev/place-bet/-1001234567890" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "123456789",
+    "userName": "TestUser",
+    "betType": "banker",
+    "amount": 100
+  }'
+
 # 获取最近游戏记录
 curl "https://your-worker.workers.dev/game-history/-1001234567890"
 
 # 获取指定游戏详情
 curl "https://your-worker.workers.dev/game-detail/20250719143001"
+
+# 获取系统配置
+curl "https://your-worker.workers.dev/config"
+
+# 获取服务统计
+curl "https://your-worker.workers.dev/stats"
 ```
 
 ### 消息发送
@@ -718,217 +901,90 @@ curl -X POST "https://your-worker.workers.dev/send-message" \
   }'
 ```
 
-## 项目结构
+## 健康检查和监控
 
-```
-├── src/
-│   ├── index.ts                    # 主程序文件
-│   ├── config/
-│   │   └── constants.ts           # 时间配置管理
-│   ├── durable-objects/
-│   │   └── baccaratGameRoom.ts    # 游戏房间 Durable Object
-│   ├── handlers/
-│   │   ├── apiHandlers.ts         # HTTP API 路由处理
-│   │   ├── commandHandlers.ts     # Bot 命令处理
-│   │   └── index.ts               # 处理器导出
-│   ├── services/
-│   │   ├── botService.ts          # Telegram Bot 服务
-│   │   ├── diceService.ts         # 骰子发送服务（含动画流程）
-│   │   ├── gameService.ts         # 核心游戏逻辑
-│   │   ├── messageQueue.ts        # 消息队列服务
-│   │   ├── storageService.ts      # KV 存储服务
-│   │   └── index.ts               # 服务导出
-│   ├── types/
-│   │   ├── api.ts                 # API 类型定义
-│   │   ├── env.ts                 # 环境变量类型
-│   │   ├── game.ts                # 游戏相关类型
-│   │   └── index.ts               # 类型导出
-│   └── utils/
-│       ├── gameUtils.ts           # 游戏工具函数
-│       ├── messageUtils.ts        # 消息格式化工具
-│       ├── timeUtils.ts           # 时间工具函数
-│       └── index.ts               # 工具导出
-├── package.json                   # 项目依赖
-├── wrangler.jsonc                 # Cloudflare Workers 配置（含时间参数）
-├── tsconfig.json                  # TypeScript 配置
-└── README.md                      # 项目说明文档
+### 服务健康状态
+
+系统提供多层次的健康检查：
+
+1. **容器级健康检查**：检查服务容器状态
+2. **服务级健康检查**：每个服务独立的健康状态
+3. **游戏级健康检查**：游戏逻辑和状态检查
+4. **队列级健康检查**：消息队列处理状态
+
+```bash
+# 基础健康检查
+curl "https://your-worker.workers.dev/health"
+
+# 详细服务统计
+curl "https://your-worker.workers.dev/stats"
+
+# 游戏房间健康状态
+curl "https://your-worker.workers.dev/game-status/-1001234567890"
 ```
 
-## 核心技术特性
+### 监控指标
 
-### 游戏状态管理
-```typescript
-enum GameState {
-  Idle = 'idle',          // 空闲
-  Betting = 'betting',    // 下注中
-  Processing = 'processing', // 处理中
-  Revealing = 'revealing',   // 开牌中
-  Finished = 'finished'      // 已结束
-}
-```
+系统自动收集以下监控指标：
 
-### 沉浸式骰子体验
-```typescript
-// 骰子发送流程
-async rollDice(chatId: string, playerType: string, cardIndex: number): Promise<number> {
-  // 1. 🎲 发送骰子动画
-  const diceMessage = await this.bot.api.sendDice(chatId, '🎲');
-  
-  // 2. ⏳ 等待动画播放完成（4秒）
-  await sleep(this.constants.DICE_ANIMATION_WAIT_MS);
-  
-  // 3. 📢 公布点数结果
-  await this.sendDiceResult(chatId, playerType, cardIndex, diceValue);
-  
-  // 4. 🔄 停顿后继续下一张牌（1秒）
-  await sleep(this.constants.DICE_RESULT_DELAY_MS);
-}
-```
-
-### 精准倒计时系统
-```typescript
-// 动态倒计时，确保时间一致性
-private setupCountdownTimers(chatId: string, gameNumber: string): void {
-  const gameEndTime = this.game.bettingEndTime;
-  const intervals = [20, 10, 5]; // 提醒时间点
-
-  intervals.forEach(seconds => {
-    const reminderTime = gameEndTime - (seconds * 1000);
-    const timeToReminder = reminderTime - Date.now();
-
-    if (timeToReminder > 0) {
-      setTimeout(() => {
-        sendCountdownMessage(seconds);
-      }, timeToReminder);
-    }
-  });
-}
-```
-
-### 消息队列核心实现
-```typescript
-// 严格序列处理
-private async processQueue(): Promise<void> {
-  this.processing = true;
-  
-  while (this.queue.length > 0) {
-    // 取出序列号最小的消息
-    const message = this.queue.shift()!;
-    
-    try {
-      await this.processMessage(message);
-      
-      // 固定延迟，确保消息不会太快
-      await sleep(this.messageDelay);
-      
-    } catch (error) {
-      await this.handleMessageError(message, error);
-    }
-  }
-  
-  this.processing = false;
-}
-```
-
-### 数据存储策略
-- **双重存储**：Durable Objects 维护当前游戏状态，Cloudflare KV 存储游戏记录。
-- **历史记录**：最近100局游戏记录保存在 KV 中。
-- **清理机制**：非自动模式下，游戏结束后30秒清理数据。
-- **容错处理**：KV 故障时依赖内存缓存，异常情况自动恢复。
-
-### 补牌规则实现
-- **闲家规则**：0-5点补牌，6-7点停牌，8-9点天牌。
-- **庄家规则**：根据自身点数和闲家第三张牌决定补牌。
-- **天牌判断**：庄家或闲家前两张牌总和为8或9点，立即结束游戏。
+- **游戏统计**：已开始/完成/失败的游戏数、平均游戏时长
+- **下注统计**：总下注次数、总金额、用户参与度
+- **消息队列**：处理消息数、成功率、平均处理时间、队列长度
+- **骰子服务**：投掷次数、成功率、分布均匀性、备用值使用
+- **定时器服务**：创建/完成/取消的定时器数、执行成功率
+- **存储服务**：读写操作数、缓存命中率、错误率
+- **Bot 服务**：API 调用次数、消息发送成功率、错误类型
 
 ## 环境变量配置
 
-| 变量名             | 必需 | 说明                           | 示例                          |
-|--------------------|------|--------------------------------|-------------------------------|
-| `BOT_TOKEN`        | ✅   | Telegram Bot Token             | `1234567890:ABC...`          |
-| `ALLOWED_CHAT_IDS` | ❌   | 允许的群组ID列表（逗号分隔）   | `-1001234567890,-1009876543210` |
+| 变量名 | 必需 | 说明 | 示例 |
+|--------|------|------|------|
+| `BOT_TOKEN` | ✅ | Telegram Bot Token | `1234567890:ABC...` |
+| `ALLOWED_CHAT_IDS` | ❌ | 允许的群组ID列表（逗号分隔） | `-1001234567890,-1009876543210` |
 
 所有时间相关参数都在 `wrangler.jsonc` 的 `vars` 字段中配置。
-
-## 监控和维护
-
-### 日志查看
-```bash
-# 实时日志
-wrangler tail
-
-# 特定环境日志
-wrangler tail --env production
-```
-
-### 性能监控
-- 监控活跃游戏数量和 API 响应时间。
-- 跟踪错误率和异常情况。
-- 检查 KV 存储的读写性能。
-- 监控骰子 API 调用成功率和延迟。
-- 检查消息队列处理效率和阻塞情况。
-
-### 数据清理
-- 非自动模式下，游戏数据在游戏结束后30秒自动清理。
-- KV 存储中的游戏记录保留最近100局，无显式TTL。
-- 内存缓存通过 Durable Objects 管理，异常时自动恢复。
-- 消息队列在游戏开始时自动重置，避免跨游戏干扰。
-
-## 部署最佳实践
-
-### 1. 安全配置
-- 定期轮换 `BOT_TOKEN`。
-- 配置 `ALLOWED_CHAT_IDS` 限制群组访问。
-
-### 2. 性能优化
-- 按需创建 Bot 实例，减少资源占用。
-- 优化 KV 读写，优先使用内存缓存。
-- 使用 Durable Objects 确保群组隔离和状态一致性。
-- 根据网络环境调整骰子超时和重试参数。
-- 合理配置消息队列延迟，平衡体验和性能。
-
-### 3. 错误处理
-- 网络请求失败时自动重试。
-- 游戏状态异常时通过 `/stopgame` 清理。
-- 用户输入验证，确保下注格式和金额有效。
-- 骰子发送失败时使用随机值保证游戏流程。
-- 消息队列异常时自动清理，重置状态。
 
 ## 故障排除
 
 ### 常见问题
 
 1. **游戏无法开始**
-   - 检查 Bot 是否有群组发送消息权限。
-   - 确认 `BOT_TOKEN` 和 KV 配置正确。
-   - 检查是否存在未结束的游戏（使用 `/status` 查看）。
+   - 检查 Bot 是否有群组发送消息权限
+   - 确认 `BOT_TOKEN` 和 KV 配置正确
+   - 检查是否存在未结束的游戏（使用 `/status` 查看）
+   - 验证 Durable Objects 绑定是否正确
 
 2. **下注失败**
-   - 确保下注在30秒时间内（`/status` 查看剩余时间）。
-   - 验证下注格式（例如 `/bet banker 100`）。
-   - 确认游戏状态为 `betting`。
+   - 确保下注在指定时间内（`/status` 查看剩余时间）
+   - 验证下注格式（例如 `/bet banker 100`）
+   - 确认游戏状态为 `betting`
+   - 检查下注金额是否超过限制（1-10000点）
 
 3. **倒计时时间不一致**
-   - 检查服务器时间同步。
-   - 确认 `BETTING_DURATION_MS` 配置正确。
-   - 验证倒计时逻辑是否基于同一时间源。
+   - 检查服务器时间同步
+   - 确认 `BETTING_DURATION_MS` 配置正确
+   - 验证定时器服务是否正常运行
 
 4. **骰子发送失败**
-   - 检查 Telegram API 连接状态。
-   - 调整 `DICE_ROLL_TIMEOUT_MS` 和重试次数。
-   - 确认群组允许发送动画消息。
+   - 检查 Telegram API 连接状态
+   - 调整 `DICE_ROLL_TIMEOUT_MS` 和重试次数
+   - 确认群组允许发送动画消息
+   - 查看是否使用了备用随机值
 
 5. **消息顺序混乱**
-   - 检查消息队列状态（通过 API 获取调试信息）。
-   - 确认游戏开始时队列是否正确重置。
-   - 验证序列号分配是否正确递增。
+   - 检查消息队列状态（通过 `/game-status` 获取调试信息）
+   - 确认游戏开始时队列是否正确重置
+   - 验证序列号分配是否正确递增
+   - 检查消息优先级设置
 
 6. **Webhook 问题**
-   - 验证 Workers URL 是否可访问。
-   - 检查 SSL 证书是否有效。
-   - 确保防火墙未阻止 Telegram 的请求。
+   - 验证 Workers URL 是否可访问
+   - 检查 SSL 证书是否有效
+   - 确保防火墙未阻止 Telegram 的请求
+   - 使用 `wrangler tail` 查看实时日志
 
 ### 调试技巧
+
 ```bash
 # 检查 Webhook 状态
 curl "https://api.telegram.org/bot<YOUR_TOKEN>/getWebhookInfo"
@@ -939,42 +995,125 @@ curl "https://your-worker.workers.dev/health"
 # 查看特定群组游戏状态（含调试信息）
 curl "https://your-worker.workers.dev/game-status/-1001234567890"
 
-# 查看最近游戏记录
-curl "https://your-worker.workers.dev/game-history/-1001234567890"
+# 查看系统配置
+curl "https://your-worker.workers.dev/config"
 
-# 检查消息队列状态
-# 在游戏状态 API 响应中查看 debug.queueLength 和 debug.queueProcessing
+# 查看服务统计
+curl "https://your-worker.workers.dev/stats"
+
+# 实时查看 Workers 日志
+wrangler tail
+
+# 测试命令响应
+curl "https://your-worker.workers.dev/commands"
 ```
+
+### 游戏状态调试
+
+游戏状态 API 提供详细的调试信息：
+
+```json
+{
+  "success": true,
+  "status": {
+    "gameNumber": "20250719143001",
+    "state": "betting",
+    "betsCount": 2,
+    "totalBets": 150,
+    "timeRemaining": 25,
+    "debug": {
+      "queueLength": 0,
+      "queueProcessing": false,
+      "isProcessing": false,
+      "revealingInProgress": false
+    }
+  }
+}
+```
+
+## 监控和维护
+
+### 日志查看
+```bash
+# 实时日志
+wrangler tail
+
+# 特定环境日志
+wrangler tail --env production
+
+# 过滤特定服务日志
+wrangler tail | grep "GameService"
+```
+
+### 性能监控重点
+
+- **游戏流程**：监控游戏状态转换、处理时间、完成率
+- **消息队列**：队列长度、处理延迟、阻塞消息数量
+- **骰子服务**：API 调用成功率、动画等待时间、随机值分布
+- **定时器服务**：定时器创建/执行成功率、长时间运行检测
+- **存储操作**：KV 读写延迟、缓存命中率、数据一致性
+- **内存使用**：Durable Objects 内存占用、服务实例数量
+
+### 数据管理
+
+- **游戏状态**：Durable Objects 自动管理，异常时自动恢复
+- **历史记录**：KV 存储中保留每个群组最近100局游戏
+- **缓存清理**：内存缓存自动过期（5分钟），支持手动清理
+- **消息队列**：游戏开始时自动重置，支持手动清空
+- **定时器清理**：自动清理过期定时器，防止内存泄漏
+
+## 部署最佳实践
+
+### 1. 安全配置
+- 定期轮换 `BOT_TOKEN`
+- 配置 `ALLOWED_CHAT_IDS` 限制群组访问
+- 使用 Cloudflare 安全功能防护 Workers
+
+### 2. 性能优化
+- 合理配置时间参数，平衡体验和性能
+- 根据群组活跃度调整自动游戏间隔
+- 优化 KV 读写操作，充分利用缓存
+- 监控 Durable Objects 内存使用
+
+### 3. 错误处理
+- 网络请求失败时自动重试
+- 游戏状态异常时提供恢复机制
+- 骰子发送失败时使用随机值保证流程
+- 消息队列异常时自动清理重置
+
+### 4. 监控告警
+- 设置游戏失败率告警阈值
+- 监控消息队列积压情况
+- 跟踪骰子 API 成功率
+- 检查存储操作错误率
 
 ## 扩展功能建议
 
-### 1. 高级功能
-- [ ] 用户积分系统：记录玩家胜负和积分。
-- [ ] 统计报表：生成每日/每周游戏统计。
-- [ ] 定时游戏：按计划自动开启游戏。
-- [ ] 下注限制：设置用户单次和总下注限额。
-- [ ] 消息队列监控：实时查看队列状态和处理效率。
+### 1. 高级游戏功能
+- [ ] 用户积分系统：记录玩家胜负和积分排名
+- [ ] 下注限制管理：个人和群组级别的限额设置
+- [ ] 游戏数据分析：胜率统计、热力图、趋势分析
+- [ ] 自定义游戏参数：管理员可调整时间配置
+- [ ] 多房间支持：同一群组多个独立游戏房间
 
 ### 2. 社交功能
-- [ ] 排行榜：显示群组内玩家胜率和收益排名。
-- [ ] 成就系统：解锁游戏里程碑奖励。
-- [ ] 群组对战：支持多群组竞技模式。
-- [ ] 好友系统：添加好友并查看战绩。
+- [ ] 排行榜系统：群组内外玩家排名
+- [ ] 成就系统：游戏里程碑和奖励
+- [ ] 好友对战：跨群组竞技模式
+- [ ] 分享功能：游戏结果分享到社交媒体
 
-### 3. 管理功能
-- [ ] 管理员面板：通过 Bot 命令管理游戏参数。
-- [ ] 用户权限：设置下注限制或管理员权限。
-- [ ] 反作弊：检测异常下注行为。
-- [ ] 时间配置热更新：运行时调整游戏参数。
-- [ ] 消息队列管理：手动清理队列、调整处理速度。
+### 3. 管理工具
+- [ ] 管理员面板：Web 界面管理游戏
+- [ ] 用户权限控制：黑名单、VIP 等级
+- [ ] 数据导出：游戏记录、统计报告
+- [ ] 实时监控：游戏状态、服务健康度
 
-### 4. 体验优化
-- [ ] 声音效果：配合骰子动画的音效。
-- [ ] 自定义表情：个性化的牌面显示。
-- [ ] 多语言支持：国际化界面和消息。
-- [ ] 移动端优化：响应式消息布局。
-- [ ] 发牌动画优化：更丰富的视觉效果。
+### 4. 技术增强
+- [ ] 多语言支持：国际化界面
+- [ ] 语音播报：游戏进程语音提示
+- [ ] 图片生成：游戏结果可视化
+- [ ] WebSocket 支持：实时状态推送
 
 ## License
 
-[MIT](./LICENSE) License © 2025-PRESENT [wudi](https://github.com/WuChenDi)
+[MIT](./LICENSE) License © 2025-PRESENT [WuChenDi](https://github.com/WuChenDi)

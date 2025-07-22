@@ -1,76 +1,126 @@
+import type { Env } from '@/types';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { webhookCallback } from 'grammy';
-import type { Env, StartGameRequest, EnableAutoRequest } from '@/types';
-import { BotService, StorageService } from '@/services';
-import { CommandHandlers } from './commandHandlers';
-import { getConstants, type Constants } from '@/config/constants';
+import { CommandHandlers } from '@/handlers/commandHandlers';
+import { ServiceContainer, BotService, StorageService, LoggerService } from '@/services';
 
+/**
+ * API 路由处理器
+ * 
+ * 职责:
+ * 1. 🌐 设置所有HTTP路由和中间件
+ * 2. 📡 处理Webhook和API请求
+ * 3. 🔧 集成服务容器和业务逻辑
+ * 4. 🛡️ 统一的错误处理和验证
+ * 5. 📊 API请求统计和监控
+ */
 export class ApiHandlers {
   private app: Hono<{ Bindings: Env }>;
+  private container: ServiceContainer;
   private commandHandlers: CommandHandlers;
-  private constants: Constants;
 
-  constructor(
-    private env: Env,
-    private storage: StorageService,
-    private botService: BotService,
-  ) {
+  constructor(container: ServiceContainer) {
+    this.container = container;
     this.app = new Hono<{ Bindings: Env }>();
-    this.app.use('*', cors());
-    this.constants = getConstants(env);
 
+    // 设置CORS中间件
+    this.app.use('*', cors());
+
+    // 获取服务实例
+    const botService = this.container.getService(BotService);
+    const storageService = this.container.getService(StorageService);
+    const logger = this.container.getService(LoggerService);
+
+    // 获取环境配置
+    const context = this.container.getContext();
+    if (!context.env.GAME_ROOMS) {
+      throw new Error('GAME_ROOMS binding not found');
+    }
+
+    // 创建增强命令处理器
     this.commandHandlers = new CommandHandlers(
-      this.botService.bot,
-      this.env.GAME_ROOMS,
-      this.storage
+      botService,
+      storageService,
+      logger,
+      context.env.GAME_ROOMS
     );
 
+    // 注册所有路由
     this.registerRoutes();
+
+    logger.info('API处理器已初始化', {
+      operation: 'api-handlers-init',
+      commandCount: 18
+    });
   }
 
+  /**
+   * 注册所有路由
+   */
   private registerRoutes(): void {
     // 基础路由
     this.app.get('/', (c) => {
+      const context = this.container.getContext();
       return c.json({
         message: '百家乐 Bot with Hono and Durable Objects!',
         timestamp: new Date().toISOString(),
-        version: '1.0.0',
+        version: '2.0.0',
+        features: [
+          '✅ 完整的Telegram命令支持',
+          '✅ 直接API调用功能',
+          '✅ 自动游戏模式',
+          '✅ 实时下注和状态查询',
+          '✅ 游戏历史记录'
+        ],
         constants: {
-          bettingDuration: `${this.constants.BETTING_DURATION_MS / 1000}s`,
-          autoGameInterval: `${this.constants.AUTO_GAME_INTERVAL_MS / 1000}s`,
-          diceAnimationWait: `${this.constants.DICE_ANIMATION_WAIT_MS / 1000}s`
-        }
+          bettingDuration: `${context.constants.BETTING_DURATION_MS / 1000}s`,
+          autoGameInterval: `${context.constants.AUTO_GAME_INTERVAL_MS / 1000}s`,
+          diceAnimationWait: `${context.constants.DICE_ANIMATION_WAIT_MS / 1000}s`
+        },
+        services: this.container.getCreatedServices()
       });
     });
 
     this.app.get('/health', (c) => {
-      return c.json({
-        status: 'ok',
-        platform: 'cloudflare-workers',
-        timestamp: new Date().toISOString(),
-        config: {
-          bettingDurationMs: this.constants.BETTING_DURATION_MS,
-          autoGameIntervalMs: this.constants.AUTO_GAME_INTERVAL_MS,
-          diceAnimationWaitMs: this.constants.DICE_ANIMATION_WAIT_MS,
-          globalProcessTimeoutMs: this.constants.GLOBAL_PROCESS_TIMEOUT_MS
-        }
-      });
+      try {
+        const containerInfo = this.container.getContainerInfo();
+        const context = this.container.getContext();
+
+        return c.json({
+          status: 'ok',
+          platform: 'cloudflare-workers',
+          timestamp: new Date().toISOString(),
+          container: containerInfo,
+          config: {
+            bettingDurationMs: context.constants.BETTING_DURATION_MS,
+            autoGameIntervalMs: context.constants.AUTO_GAME_INTERVAL_MS,
+            diceAnimationWaitMs: context.constants.DICE_ANIMATION_WAIT_MS,
+            globalProcessTimeoutMs: context.constants.GLOBAL_PROCESS_TIMEOUT_MS
+          },
+          commandsEnabled: true
+        });
+      } catch (error) {
+        return c.json({
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Unknown error',
+          timestamp: new Date().toISOString()
+        }, 500);
+      }
     });
 
-    // Webhook 路由 - 使用已经注册了命令的 Bot
+    // Webhook路由
     this.app.post('/webhook', async (c) => {
-      const token = c.env.BOT_TOKEN;
-      if (!token) {
-        return c.json({ error: 'BOT_TOKEN not configured' }, 500);
-      }
-
       try {
-        // 使用已经注册了命令的 Bot 实例
-        const callback = webhookCallback(this.botService.bot, 'hono');
+        const botService = this.container.getService(BotService);
+        const callback = webhookCallback(botService.bot, 'hono');
         return await callback(c);
       } catch (error) {
-        console.error('Webhook error:', error);
+        const logger = this.container.getService(LoggerService);
+        logger.error('Webhook处理失败', {
+          operation: 'webhook-error'
+        }, error);
+
         return c.json({
           error: 'Webhook processing failed',
           details: error instanceof Error ? error.message : 'Unknown error'
@@ -78,24 +128,38 @@ export class ApiHandlers {
       }
     });
 
-    // 游戏历史记录 API
+    // 游戏历史记录API
     this.app.get('/game-history/:chatId', async (c) => {
       try {
         const chatId = c.req.param('chatId');
+        const limit = parseInt(c.req.query('limit') || '10');
 
         // 验证群组权限
         if (!this.validateChatId(c, chatId)) {
           return c.json({ error: 'Chat ID not allowed' }, 403);
         }
 
-        const history = await this.storage.getGameHistory(chatId);
-        return c.json({
-          success: true,
-          history,
-          total: history.length
-        });
+        const storageService = this.container.getService(StorageService);
+        const result = await storageService.getGameHistory(chatId, limit);
+
+        if (result.success) {
+          return c.json({
+            success: true,
+            history: result.data,
+            total: result.data?.length || 0
+          });
+        } else {
+          return c.json({
+            success: false,
+            error: result.error
+          }, 500);
+        }
       } catch (error) {
-        console.error('Game history error:', error);
+        const logger = this.container.getService(LoggerService);
+        logger.error('获取游戏历史失败', {
+          operation: 'get-game-history-error'
+        }, error);
+
         return c.json({
           error: 'Failed to get game history',
           details: error instanceof Error ? error.message : 'Unknown error'
@@ -103,7 +167,7 @@ export class ApiHandlers {
       }
     });
 
-    // 游戏详情 API
+    // 游戏详情API
     this.app.get('/game-detail/:gameNumber', async (c) => {
       try {
         const gameNumber = c.req.param('gameNumber');
@@ -116,13 +180,20 @@ export class ApiHandlers {
           }, 400);
         }
 
-        const game = await this.storage.getGameDetail(gameNumber);
-        if (!game) {
-          return c.json({ success: false, error: 'Game not found' }, 404);
+        const storageService = this.container.getService(StorageService);
+        const result = await storageService.getGameDetail(gameNumber);
+
+        if (result.success) {
+          return c.json({ success: true, game: result.data });
+        } else {
+          return c.json({ success: false, error: result.error }, 404);
         }
-        return c.json({ success: true, game });
       } catch (error) {
-        console.error('Game detail error:', error);
+        const logger = this.container.getService(LoggerService);
+        logger.error('获取游戏详情失败', {
+          operation: 'get-game-detail-error'
+        }, error);
+
         return c.json({
           error: 'Failed to get game detail',
           details: error instanceof Error ? error.message : 'Unknown error'
@@ -130,199 +201,15 @@ export class ApiHandlers {
       }
     });
 
-    // 自动游戏 API
-    this.app.post('/auto-game/:chatId', async (c) => {
-      try {
-        const chatId = c.req.param('chatId');
+    // Durable Object 游戏操作代理路由
+    this.app.post('/auto-game/:chatId', async (c) => this.proxyToGameRoom(c, '/start-game'));
+    this.app.post('/enable-auto/:chatId', async (c) => this.proxyToGameRoom(c, '/enable-auto'));
+    this.app.post('/disable-auto/:chatId', async (c) => this.proxyToGameRoom(c, '/disable-auto'));
+    this.app.post('/process-game/:chatId', async (c) => this.proxyToGameRoom(c, '/process-game'));
+    this.app.get('/game-status/:chatId', async (c) => this.proxyToGameRoom(c, '/get-status'));
+    this.app.post('/place-bet/:chatId', async (c) => this.proxyToGameRoom(c, '/place-bet'));
 
-        // 验证群组权限
-        if (!this.validateChatId(c, chatId)) {
-          return c.json({ error: 'Chat ID not allowed' }, 403);
-        }
-
-        const roomId = c.env.GAME_ROOMS.idFromName(chatId);
-        const room = c.env.GAME_ROOMS.get(roomId);
-
-        const response = await room.fetch(new Request('https://game.room/start-game', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chatId } as StartGameRequest)
-        }));
-
-        const result = await response.json() as any;
-
-        if (result.success) {
-          const bettingDurationSeconds = this.constants.BETTING_DURATION_MS / 1000;
-          await this.botService.sendMessage(chatId,
-            `🎲 **自动游戏 - 第 ${result.gameNumber} 局开始！**\n\n` +
-            `💰 下注时间：${bettingDurationSeconds}秒\n` +
-            `📝 下注格式：/bet banker 100\n` +
-            `⏰ ${bettingDurationSeconds}秒后将自动处理游戏...`
-          );
-          return c.json({
-            success: true,
-            gameNumber: result.gameNumber,
-            chatId,
-            bettingEndTime: result.bettingEndTime,
-            bettingDurationMs: this.constants.BETTING_DURATION_MS,
-            message: 'Auto game started'
-          });
-        } else {
-          return c.json({ error: result.error }, 400);
-        }
-      } catch (error) {
-        console.error('Auto game error:', error);
-        return c.json({
-          error: 'Failed to start auto game',
-          details: error instanceof Error ? error.message : 'Unknown error'
-        }, 500);
-      }
-    });
-
-    // 启用自动游戏
-    this.app.post('/enable-auto/:chatId', async (c) => {
-      try {
-        const chatId = c.req.param('chatId');
-
-        // 验证群组权限
-        if (!this.validateChatId(c, chatId)) {
-          return c.json({ error: 'Chat ID not allowed' }, 403);
-        }
-
-        const roomId = c.env.GAME_ROOMS.idFromName(chatId);
-        const room = c.env.GAME_ROOMS.get(roomId);
-
-        const response = await room.fetch(new Request('https://game.room/enable-auto', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chatId } as EnableAutoRequest)
-        }));
-
-        const result = await response.json() as any;
-
-        if (result.success) {
-          const autoIntervalSeconds = this.constants.AUTO_GAME_INTERVAL_MS / 1000;
-          return c.json({
-            ...result,
-            autoGameIntervalMs: this.constants.AUTO_GAME_INTERVAL_MS,
-            autoGameIntervalSeconds: autoIntervalSeconds,
-            message: `Auto game enabled with ${autoIntervalSeconds}s interval`
-          });
-        }
-
-        return response;
-      } catch (error) {
-        console.error('Enable auto error:', error);
-        return c.json({
-          error: 'Failed to enable auto game',
-          details: error instanceof Error ? error.message : 'Unknown error'
-        }, 500);
-      }
-    });
-
-    // 禁用自动游戏
-    this.app.post('/disable-auto/:chatId', async (c) => {
-      try {
-        const chatId = c.req.param('chatId');
-
-        // 验证群组权限
-        if (!this.validateChatId(c, chatId)) {
-          return c.json({ error: 'Chat ID not allowed' }, 403);
-        }
-
-        const roomId = c.env.GAME_ROOMS.idFromName(chatId);
-        const room = c.env.GAME_ROOMS.get(roomId);
-
-        const response = await room.fetch(new Request('https://game.room/disable-auto', {
-          method: 'POST'
-        }));
-
-        return response;
-      } catch (error) {
-        console.error('Disable auto error:', error);
-        return c.json({
-          error: 'Failed to disable auto game',
-          details: error instanceof Error ? error.message : 'Unknown error'
-        }, 500);
-      }
-    });
-
-    // 处理游戏 API
-    this.app.post('/process-game/:chatId', async (c) => {
-      try {
-        const chatId = c.req.param('chatId');
-
-        // 验证群组权限
-        if (!this.validateChatId(c, chatId)) {
-          return c.json({ error: 'Chat ID not allowed' }, 403);
-        }
-
-        const roomId = c.env.GAME_ROOMS.idFromName(chatId);
-        const room = c.env.GAME_ROOMS.get(roomId);
-
-        const response = await room.fetch(new Request('https://game.room/process-game', {
-          method: 'POST'
-        }));
-
-        const result = await response.json() as any;
-
-        if (result.success) {
-          return c.json({
-            success: true,
-            message: 'Game processed successfully',
-            timestamp: new Date().toISOString()
-          });
-        } else {
-          return c.json({
-            error: result.error || 'Unknown error',
-            timestamp: new Date().toISOString()
-          }, 400);
-        }
-      } catch (error) {
-        console.error('Process game error:', error);
-        return c.json({
-          error: 'Failed to process game',
-          details: error instanceof Error ? error.message : 'Unknown error'
-        }, 500);
-      }
-    });
-
-    // 游戏状态 API
-    this.app.get('/game-status/:chatId', async (c) => {
-      try {
-        const chatId = c.req.param('chatId');
-
-        // 验证群组权限
-        if (!this.validateChatId(c, chatId)) {
-          return c.json({ error: 'Chat ID not allowed' }, 403);
-        }
-
-        const roomId = c.env.GAME_ROOMS.idFromName(chatId);
-        const room = c.env.GAME_ROOMS.get(roomId);
-
-        const response = await room.fetch('https://game.room/get-status');
-        const result = await response.json() as any;
-
-        // 添加时间配置信息
-        if (result.gameNumber) {
-          result.config = {
-            bettingDurationMs: this.constants.BETTING_DURATION_MS,
-            autoGameIntervalMs: this.constants.AUTO_GAME_INTERVAL_MS,
-            diceAnimationWaitMs: this.constants.DICE_ANIMATION_WAIT_MS
-          };
-        }
-
-        return c.json(result);
-      } catch (error) {
-        console.error('Game status error:', error);
-        return c.json({
-          error: 'Failed to get game status',
-          details: error instanceof Error ? error.message : 'Unknown error'
-        }, 500);
-      }
-    });
-
-    // 发送消息 API
+    // 发送消息API
     this.app.post('/send-message', async (c) => {
       try {
         const { chatId, message, parseMode } = await c.req.json();
@@ -336,14 +223,29 @@ export class ApiHandlers {
           return c.json({ error: 'Chat ID not allowed' }, 403);
         }
 
-        const result = await this.botService.sendMessage(chatId, message, parseMode || undefined);
-        return c.json({
-          success: true,
-          messageId: result.message_id,
-          timestamp: new Date().toISOString()
+        const botService = this.container.getService(BotService);
+        const result = await botService.sendMessage(chatId, message, {
+          parseMode: parseMode || 'Markdown'
         });
+
+        if (result.success) {
+          return c.json({
+            success: true,
+            messageId: result.data?.message_id,
+            timestamp: new Date().toISOString()
+          });
+        } else {
+          return c.json({
+            success: false,
+            error: result.error
+          }, 500);
+        }
       } catch (error) {
-        console.error('Send message error:', error);
+        const logger = this.container.getService(LoggerService);
+        logger.error('发送消息失败', {
+          operation: 'send-message-error'
+        }, error);
+
         return c.json({
           error: 'Failed to send message',
           details: error instanceof Error ? error.message : 'Unknown error'
@@ -351,7 +253,7 @@ export class ApiHandlers {
       }
     });
 
-    // 设置 Webhook API
+    // 设置Webhook API
     this.app.post('/set-webhook', async (c) => {
       try {
         const { url } = await c.req.json();
@@ -359,22 +261,35 @@ export class ApiHandlers {
           return c.json({ error: 'webhook url is required' }, 400);
         }
 
-        // 验证 URL 格式
+        // 验证URL格式
         try {
           new URL(url);
         } catch {
           return c.json({ error: 'Invalid webhook URL format' }, 400);
         }
 
-        await this.botService.setWebhook(url);
-        return c.json({
-          success: true,
-          message: 'Webhook set successfully',
-          url,
-          timestamp: new Date().toISOString()
-        });
+        const botService = this.container.getService(BotService);
+        const result = await botService.setWebhook(url);
+
+        if (result.success) {
+          return c.json({
+            success: true,
+            message: 'Webhook set successfully',
+            url,
+            timestamp: new Date().toISOString()
+          });
+        } else {
+          return c.json({
+            success: false,
+            error: result.error
+          }, 500);
+        }
       } catch (error) {
-        console.error('Set webhook error:', error);
+        const logger = this.container.getService(LoggerService);
+        logger.error('设置Webhook失败', {
+          operation: 'set-webhook-error'
+        }, error);
+
         return c.json({
           error: 'Failed to set webhook',
           details: error instanceof Error ? error.message : 'Unknown error'
@@ -382,53 +297,219 @@ export class ApiHandlers {
       }
     });
 
-    // 获取配置信息 API
+    // 获取配置信息API
     this.app.get('/config', (c) => {
+      const context = this.container.getContext();
+
       return c.json({
         success: true,
         config: {
           // 核心游戏时间
-          bettingDurationMs: this.constants.BETTING_DURATION_MS,
-          autoGameIntervalMs: this.constants.AUTO_GAME_INTERVAL_MS,
+          bettingDurationMs: context.constants.BETTING_DURATION_MS,
+          autoGameIntervalMs: context.constants.AUTO_GAME_INTERVAL_MS,
 
           // 骰子相关时间
-          diceRollTimeoutMs: this.constants.DICE_ROLL_TIMEOUT_MS,
-          diceRollMaxRetries: this.constants.DICE_ROLL_MAX_RETRIES,
-          diceAnimationWaitMs: this.constants.DICE_ANIMATION_WAIT_MS,
-          diceResultDelayMs: this.constants.DICE_RESULT_DELAY_MS,
+          diceRollTimeoutMs: context.constants.DICE_ROLL_TIMEOUT_MS,
+          diceRollMaxRetries: context.constants.DICE_ROLL_MAX_RETRIES,
+          diceAnimationWaitMs: context.constants.DICE_ANIMATION_WAIT_MS,
+          diceResultDelayMs: context.constants.DICE_RESULT_DELAY_MS,
 
           // 流程控制时间
-          cardDealDelayMs: this.constants.CARD_DEAL_DELAY_MS,
-          messageDelayMs: this.constants.MESSAGE_DELAY_MS,
+          cardDealDelayMs: context.constants.CARD_DEAL_DELAY_MS,
+          messageDelayMs: context.constants.MESSAGE_DELAY_MS,
 
           // 系统保护时间
-          globalProcessTimeoutMs: this.constants.GLOBAL_PROCESS_TIMEOUT_MS,
-          cleanupDelayMs: this.constants.CLEANUP_DELAY_MS,
+          globalProcessTimeoutMs: context.constants.GLOBAL_PROCESS_TIMEOUT_MS,
+          cleanupDelayMs: context.constants.CLEANUP_DELAY_MS,
 
           // 人性化显示
           humanReadable: {
-            bettingDuration: `${this.constants.BETTING_DURATION_MS / 1000}秒`,
-            autoGameInterval: `${this.constants.AUTO_GAME_INTERVAL_MS / 1000}秒`,
-            diceAnimationWait: `${this.constants.DICE_ANIMATION_WAIT_MS / 1000}秒`,
-            globalProcessTimeout: `${this.constants.GLOBAL_PROCESS_TIMEOUT_MS / 1000}秒`
+            bettingDuration: `${context.constants.BETTING_DURATION_MS / 1000}秒`,
+            autoGameInterval: `${context.constants.AUTO_GAME_INTERVAL_MS / 1000}秒`,
+            diceAnimationWait: `${context.constants.DICE_ANIMATION_WAIT_MS / 1000}秒`,
+            globalProcessTimeout: `${context.constants.GLOBAL_PROCESS_TIMEOUT_MS / 1000}秒`
           }
         },
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    // 服务统计API
+    this.app.get('/stats', (c) => {
+      try {
+        const containerInfo = this.container.getContainerInfo();
+        const botService = this.container.getService(BotService);
+        const storageService = this.container.getService(StorageService);
+
+        return c.json({
+          success: true,
+          stats: {
+            container: containerInfo,
+            bot: botService.getStats(),
+            storage: storageService.getStats(),
+            commands: {
+              enabled: true,
+              totalCommands: 12,
+              features: [
+                'start', 'id', 'newgame', 'autogame', 'stopauto',
+                'bet', 'process', 'status', 'history', 'gameinfo',
+                'stopgame', 'help'
+              ]
+            }
+          },
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        return c.json({
+          error: 'Failed to get stats',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }, 500);
+      }
+    });
+
+    // 命令测试API
+    this.app.get('/commands', (c) => {
+      return c.json({
+        success: true,
+        commands: [
+          {
+            command: '/start',
+            description: '启动机器人',
+            status: 'enabled'
+          },
+          {
+            command: '/id',
+            description: '获取群组和用户信息',
+            status: 'enabled'
+          },
+          {
+            command: '/newgame',
+            description: '开始新游戏',
+            status: 'enabled'
+          },
+          {
+            command: '/autogame',
+            description: '开启自动游戏模式',
+            status: 'enabled'
+          },
+          {
+            command: '/stopauto',
+            description: '关闭自动游戏模式',
+            status: 'enabled'
+          },
+          {
+            command: '/bet banker 100',
+            description: '下注庄家100点',
+            status: 'enabled'
+          },
+          {
+            command: '/process',
+            description: '立即处理游戏',
+            status: 'enabled'
+          },
+          {
+            command: '/status',
+            description: '查看游戏状态',
+            status: 'enabled'
+          },
+          {
+            command: '/history',
+            description: '查看最近10局记录',
+            status: 'enabled'
+          },
+          {
+            command: '/gameinfo <编号>',
+            description: '查看游戏详情',
+            status: 'enabled'
+          },
+          {
+            command: '/stopgame',
+            description: '停止当前游戏',
+            status: 'enabled'
+          },
+          {
+            command: '/help',
+            description: '查看帮助',
+            status: 'enabled'
+          }
+        ],
         timestamp: new Date().toISOString()
       });
     });
   }
 
   /**
+   * 代理请求到Durable Object游戏房间
+   */
+  private async proxyToGameRoom(c: any, doPath: string): Promise<Response> {
+    try {
+      const chatId = c.req.param('chatId');
+
+      // 验证群组权限
+      if (!this.validateChatId(c, chatId)) {
+        return c.json({ error: 'Chat ID not allowed' }, 403);
+      }
+
+      const context = this.container.getContext();
+      if (!context.env.GAME_ROOMS) {
+        return c.json({ error: 'Game rooms not configured' }, 500);
+      }
+
+      // 获取Durable Object实例
+      const roomId = context.env.GAME_ROOMS.idFromName(chatId);
+      const room = context.env.GAME_ROOMS.get(roomId);
+
+      // 构造请求
+      let requestBody: any = {};
+      if (c.req.method === 'POST') {
+        try {
+          requestBody = await c.req.json();
+        } catch {
+          // 如果没有body就使用空对象
+        }
+        requestBody.chatId = chatId;
+      }
+
+      // 发送请求到DO
+      const response = await room.fetch(new Request(`https://game.room${doPath}`, {
+        method: c.req.method,
+        headers: { 'Content-Type': 'application/json' },
+        body: c.req.method === 'POST' ? JSON.stringify(requestBody) : undefined
+      }));
+
+      // 转发响应
+      const result = await response.json();
+      return c.json(result, response.status);
+    } catch (error) {
+      const logger = this.container.getService(LoggerService);
+      logger.error('代理到游戏房间失败', {
+        operation: 'proxy-to-game-room-error',
+        doPath
+      }, error);
+
+      return c.json({
+        error: 'Failed to proxy to game room',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }, 500);
+    }
+  }
+
+  /**
    * 验证群组ID权限
    */
   private validateChatId(c: any, chatId: string): boolean {
-    const allowedChatIds = c.env.ALLOWED_CHAT_IDS?.split(',').map((id: string) => id.trim());
+    const context = this.container.getContext();
+    const allowedChatIds = context.env.ALLOWED_CHAT_IDS?.split(',').map((id: string) => id.trim());
+
     if (allowedChatIds && !allowedChatIds.includes(chatId)) {
       return false;
     }
     return true;
   }
 
+  /**
+   * 获取Hono应用实例
+   */
   getApp(): Hono<{ Bindings: Env }> {
     return this.app;
   }

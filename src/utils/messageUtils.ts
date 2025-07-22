@@ -83,7 +83,7 @@ export function formatGameResult(game: GameData, options?: GameResultOptions): s
     message += `❌ **失败者:**\n${losers.join('\n')}\n\n`;
   }
 
-  // 🔥 添加本局统计信息
+  // 添加本局统计信息
   if (Object.keys(game.bets).length > 0) {
     message += `📊 **本局统计:**\n`;
     message += `💰 总赔付: ${totalWinAmount} 点\n`;
@@ -91,7 +91,7 @@ export function formatGameResult(game: GameData, options?: GameResultOptions): s
     message += `📈 庄家盈亏: ${totalLossAmount - totalWinAmount > 0 ? '+' : ''}${totalLossAmount - totalWinAmount} 点\n\n`;
   }
 
-  // 🔥 动态游戏状态提示
+  // 动态游戏状态提示
   const isAutoEnabled = options?.isAutoGameEnabled;
   const delaySeconds = options?.nextGameDelaySeconds || 10;
 
@@ -168,7 +168,7 @@ export function formatGameInfo(game: GameRecord): string {
     message += `👥 参与人数: ${game.totalBets}\n`;
     message += `💵 总下注额: ${game.totalAmount}点\n\n`;
 
-    // 🔥 更新下注汇总计算
+    // 更新下注汇总计算
     const allUserBets = Object.values(game.bets);
     const betSummary = allUserBets.reduce((acc, userBets) => {
       if (userBets.banker) acc[BetType.Banker] = (acc[BetType.Banker] || 0) + userBets.banker;
