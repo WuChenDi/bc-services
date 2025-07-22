@@ -430,7 +430,7 @@ wrangler login
 # 创建 KV namespace
 wrangler kv:namespace create "BC_GAME_KV"
 
-# 将返回的 namespace ID 添加到 wrangler.toml 中
+# 将返回的 namespace ID 添加到 wrangler.jsonc 中
 ```
 
 ### 5. 部署
@@ -506,7 +506,7 @@ curl -X POST "https://api.telegram.org/bot<token>/setWebhook" \
 │       ├── timeUtils.ts                 # 时间工具函数
 │       └── index.ts                     # 工具导出
 ├── package.json                         # 项目依赖
-├── wrangler.toml                        # Cloudflare Workers 配置
+├── wrangler.jsonc                       # Cloudflare Workers 配置
 ├── tsconfig.json                        # TypeScript 配置
 └── README.md                            # 项目说明文档
 ```
@@ -942,7 +942,7 @@ curl "https://your-worker.workers.dev/game-status/-1001234567890"
 | `BOT_TOKEN` | ✅ | Telegram Bot Token | `1234567890:ABC...` |
 | `ALLOWED_CHAT_IDS` | ❌ | 允许的群组ID列表（逗号分隔） | `-1001234567890,-1009876543210` |
 
-所有时间相关参数都在 `wrangler.toml` 的 `[vars]` 字段中配置。
+所有时间相关参数都在 `wrangler.jsonc` 的 `vars` 字段中配置。
 
 ## 故障排除
 
