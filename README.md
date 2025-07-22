@@ -1118,6 +1118,6 @@ wrangler tail | grep "GameService"
 - [ ] 图片生成：游戏结果可视化
 - [ ] WebSocket 支持：实时状态推送
 
-## License
+## 📜 License
 
-[MIT](./LICENSE) License © 2025-PRESENT [WuChenDi](https://github.com/WuChenDi)
+[MIT](./LICENSE) License &copy; 2023-PRESENT [wudi](https://github.com/WuChenDi)
