@@ -46,7 +46,10 @@ export function formatGameResult(game: GameData, options?: GameResultOptions): s
   let totalLossAmount = 0;
 
   Object.entries(game.bets).forEach(([userId, userBets]) => {
-    const userName = userBets.userName;
+    // 显示用户名和ID
+    const userName = userBets.userName || 'Unknown';
+    const displayName = `${userName} (${userId})`;
+
     let userWinAmount = 0;
     let userLossAmount = 0;
 
@@ -68,11 +71,11 @@ export function formatGameResult(game: GameData, options?: GameResultOptions): s
 
     const netAmount = userWinAmount - userLossAmount;
     if (netAmount > 0) {
-      winners.push(`${userName}: +${netAmount}`);
+      winners.push(`${displayName}: +${netAmount}`);
     } else if (netAmount < 0) {
-      losers.push(`${userName}: ${netAmount}`);
+      losers.push(`${displayName}: ${netAmount}`);
     } else {
-      losers.push(`${userName}: ±0`);
+      losers.push(`${displayName}: ±0`);
     }
   });
 
@@ -168,7 +171,7 @@ export function formatGameInfo(game: GameRecord): string {
     message += `👥 参与人数: ${game.totalBets}\n`;
     message += `💵 总下注额: ${game.totalAmount}点\n\n`;
 
-    // 更新下注汇总计算
+    // 更新下注汇总计算，不显示具体用户信息
     const allUserBets = Object.values(game.bets);
     const betSummary = allUserBets.reduce((acc, userBets) => {
       if (userBets.banker) acc[BetType.Banker] = (acc[BetType.Banker] || 0) + userBets.banker;
@@ -180,7 +183,16 @@ export function formatGameInfo(game: GameRecord): string {
     message += `📊 **分类下注:**\n`;
     message += `🏦 庄家: ${betSummary[BetType.Banker] || 0}点\n`;
     message += `👤 闲家: ${betSummary[BetType.Player] || 0}点\n`;
-    message += `🤝 和局: ${betSummary[BetType.Tie] || 0}点`;
+    message += `🤝 和局: ${betSummary[BetType.Tie] || 0}点\n\n`;
+
+    // 可选：显示匿名化的参与者信息
+    if (allUserBets.length > 0) {
+      message += `👤 **参与者:** `;
+      const anonymizedUsers = Object.keys(game.bets).map((userId, index) => {
+        return `用户${userId.slice(-4)}`;
+      });
+      message += anonymizedUsers.join(', ');
+    }
   } else {
     message += `😔 **无人下注**`;
   }

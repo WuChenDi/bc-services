@@ -211,11 +211,11 @@ export class CommandHandlers {
 
     try {
       await ctx.reply('🎲 正在开始新游戏...');
-      
+
       const result = await this.callGameRoomAPI(chatId, '/start-game');
-      
+
       if (result.success) {
-        await this.sendSuccessMessage(ctx, 
+        await this.sendSuccessMessage(ctx,
           `🎮 新游戏已开始！\n` +
           `游戏编号: ${result.gameNumber}\n` +
           `⏰ 下注时间: 30秒\n` +
@@ -251,11 +251,11 @@ export class CommandHandlers {
 
     try {
       await ctx.reply('🤖 正在开启自动游戏模式...');
-      
+
       const result = await this.callGameRoomAPI(chatId, '/enable-auto');
-      
+
       if (result.success) {
-        await this.sendSuccessMessage(ctx, 
+        await this.sendSuccessMessage(ctx,
           `🤖 自动游戏模式已开启！\n` +
           `🔄 游戏将每10秒自动进行\n` +
           `🛑 使用 /stopauto 停止自动模式`
@@ -290,11 +290,11 @@ export class CommandHandlers {
 
     try {
       await ctx.reply('🛑 正在关闭自动游戏模式...');
-      
+
       const result = await this.callGameRoomAPI(chatId, '/disable-auto');
-      
+
       if (result.success) {
-        await this.sendSuccessMessage(ctx, 
+        await this.sendSuccessMessage(ctx,
           `🛑 自动游戏模式已关闭\n` +
           `🎮 使用 /newgame 开始手动游戏`
         );
@@ -364,26 +364,45 @@ export class CommandHandlers {
       });
 
       await ctx.reply('💰 正在处理下注...');
-      
+
       const result = await this.callGameRoomAPI(chatId, '/place-bet', 'POST', {
         betType,
         amount,
-        userId: ctx.from?.id.toString()
+        userId: ctx.from?.id.toString(),
+        userName: ctx.from?.first_name || ctx.from?.username || 'Unknown'
       });
-      
+
       if (result.success) {
         const betTypeNames = {
           banker: '庄家',
           player: '闲家',
           tie: '和局'
         };
-        
-        await this.sendSuccessMessage(ctx, 
-          `💰 下注成功！\n` +
-          `类型: ${betTypeNames[betType]}\n` +
-          `金额: ${amount} 点\n` +
-          `当前总下注: ${result.totalBets || 0} 点`
-        );
+
+        let message = `✅ 💰 ${ctx.from?.first_name || ctx.from?.username || 'Unknown'} (${ctx.from?.id}) 下注成功！\n`;
+        message += `类型: ${betTypeNames[betType]}\n`;
+
+        const finalAmount = result.amount || amount;
+
+        if (result.isAccumulated) {
+          // 同类型累加
+          const previousAmount = result.previousAmount || 0;
+          const addedAmount = result.addedAmount || amount;
+          message += `金额: ${previousAmount} + ${addedAmount} = ${finalAmount} 点\n`;
+          message += `📈 累加下注\n`;
+        } else if (result.isNewBetType) {
+          // 新的下注类型
+          message += `金额: ${finalAmount} 点\n`;
+          message += `✨ 新增下注类型\n`;
+        } else {
+          // 首次下注
+          message += `金额: ${finalAmount} 点\n`;
+          message += `🎯 首次下注\n`;
+        }
+
+        message += `当前总下注: ${result.totalBetsAmount || 0} 点`;
+
+        await this.sendSuccessMessage(ctx, message);
       } else {
         await this.sendErrorMessage(ctx, result.error || '下注失败');
       }
@@ -414,11 +433,11 @@ export class CommandHandlers {
 
     try {
       await ctx.reply('🎲 正在立即处理游戏...');
-      
+
       const result = await this.callGameRoomAPI(chatId, '/process-game');
-      
+
       if (result.success) {
-        await this.sendSuccessMessage(ctx, 
+        await this.sendSuccessMessage(ctx,
           `🎯 游戏处理完成！\n` +
           `🎲 游戏结果将很快揭晓`
         );
@@ -452,14 +471,14 @@ export class CommandHandlers {
 
     try {
       const result = await this.callGameRoomAPI(chatId, '/get-status', 'GET');
-      
+
       if (result.success && result.status) {
         const status = result.status;
-        
+
         // 修正：使用字符串映射而不是枚举
         const stateNames: Record<string, string> = {
           'idle': '空闲',
-          'betting': '下注中', 
+          'betting': '下注中',
           'processing': '处理中',
           'revealing': '开牌中',
           'finished': '已结束',
@@ -469,27 +488,27 @@ export class CommandHandlers {
 
         let message = `📊 **游戏状态**\n\n`;
         message += `🎮 状态: ${stateNames[status.state] || status.state}\n`;
-        
+
         if (status.gameNumber) {
           message += `🎯 游戏编号: ${status.gameNumber}\n`;
         }
-        
+
         if (status.isAutoMode || status.autoGameEnabled) {
           message += `🤖 自动模式: 开启\n`;
         }
-        
+
         if (status.totalBets > 0) {
           message += `💰 总下注: ${status.totalBets} 点\n`;
         }
-        
+
         if (status.betsCount > 0) {
           message += `👥 参与人数: ${status.betsCount} 人\n`;
         }
-        
+
         if (status.totalBetsCount && status.totalBetsCount > 0) {
           message += `🎲 下注次数: ${status.totalBetsCount} 次\n`;
         }
-        
+
         if (status.timeRemaining && status.timeRemaining > 0) {
           message += `⏰ 剩余时间: ${Math.ceil(status.timeRemaining / 1000)} 秒\n`;
         }
@@ -598,11 +617,11 @@ export class CommandHandlers {
 
     try {
       await ctx.reply('🛑 正在停止游戏...');
-      
+
       const result = await this.callGameRoomAPI(chatId, '/disable-auto');
-      
+
       if (result.success) {
-        await this.sendSuccessMessage(ctx, 
+        await this.sendSuccessMessage(ctx,
           `🛑 游戏已停止\n` +
           `🎮 使用 /newgame 开始新游戏`
         );

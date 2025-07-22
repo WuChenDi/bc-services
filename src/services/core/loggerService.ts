@@ -325,9 +325,9 @@ export class LoggerService extends BaseService {
    * 格式化详细消息
    */
   private formatDetailedMessage(logEntry: LogEntry): string {
-    const timestamp = this.loggerConfig.includeTimestamp
-      ? new Date(logEntry.timestamp).toISOString() + ' '
-      : '';
+    // const timestamp = this.loggerConfig.includeTimestamp
+    //   ? new Date(logEntry.timestamp).toISOString() + ' '
+    //   : '';
 
     const contextParts: string[] = [];
 
@@ -339,7 +339,8 @@ export class LoggerService extends BaseService {
     const contextStr = contextParts.length > 0 ? `[${contextParts.join('|')}] ` : '';
     const levelStr = `[${logEntry.level}] `;
 
-    let message = `${timestamp}${levelStr}${contextStr}${logEntry.message}`;
+    // let message = `${timestamp}${levelStr}${contextStr}${logEntry.message}`;
+    let message = `${levelStr}${contextStr}${logEntry.message}`;
 
     // 添加额外数据
     if (logEntry.data) {

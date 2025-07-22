@@ -329,7 +329,9 @@ export class GameService extends BaseService {
         betType,
         amount: betResult.finalAmount,
         isAccumulated: betResult.isAccumulated,
-        isReplaced: betResult.isReplaced,
+        isNewBetType: betResult.isNewBetType,
+        previousAmount: betResult.previousAmount,
+        addedAmount: betResult.addedAmount,
         remainingTime,
         totalUsers,
         totalBetsAmount,
@@ -340,7 +342,8 @@ export class GameService extends BaseService {
         success: true,
         betType,
         finalAmount: betResult.finalAmount,
-        isAccumulated: betResult.isAccumulated
+        isAccumulated: betResult.isAccumulated,
+        isNewBetType: betResult.isNewBetType
       });
 
       // 第十步：返回结果
@@ -353,7 +356,7 @@ export class GameService extends BaseService {
         totalBets: totalUsers,
         totalBetsAmount,
         totalBetsCount,
-        ...betResult  // 包含 isAccumulated, isReplaced, previousAmount 等详细信息
+        ...betResult  // 包含 isAccumulated, isNewBetType, previousAmount, addedAmount 等详细信息
       };
     } catch (error) {
       this.logger.error('下注失败', {
@@ -497,6 +500,7 @@ export class GameService extends BaseService {
     finalAmount: number;
     isAccumulated?: boolean;
     isReplaced?: boolean;
+    isNewBetType?: boolean;
     previousAmount?: number;
     addedAmount?: number;
     previousBetType?: BetType;
@@ -513,48 +517,61 @@ export class GameService extends BaseService {
     const userBets = this.game.bets[userId];
     const existingAmount = userBets[betType] || 0;
 
-    // 检查是否有其他类型的下注需要替换
-    let previousBetType: BetType | undefined;
-    let previousAmount: number | undefined;
-
-    if (existingAmount === 0) {
-      // 检查是否有其他类型的下注
-      for (const [key, value] of Object.entries(userBets)) {
-        if (key !== 'userName' && typeof value === 'number' && value > 0) {
-          previousBetType = key as BetType;
-          previousAmount = value;
-          // 清除之前的下注
-          delete userBets[key as BetType];
-          break;
-        }
-      }
-    }
-
-    // 设置新的下注
-    const finalAmount = existingAmount + amount;
-    userBets[betType] = finalAmount;
+    // 更新用户名（可能有变化）
     userBets.userName = userName;
 
     if (existingAmount > 0) {
-      // 累加下注
+      // 同类型下注累加
+      const finalAmount = existingAmount + amount;
+      userBets[betType] = finalAmount;
+
+      this.logger.info('同类型下注累加', {
+        operation: 'bet-accumulate-same-type',
+        userId,
+        userName,
+        betType,
+        previousAmount: existingAmount,
+        addedAmount: amount,
+        finalAmount
+      });
+
       return {
         finalAmount,
         isAccumulated: true,
         previousAmount: existingAmount,
         addedAmount: amount
       };
-    } else if (previousBetType && previousAmount) {
-      // 替换下注
-      return {
-        finalAmount,
-        isReplaced: true,
-        previousBetType,
-        previousAmount
-      };
     } else {
-      // 首次下注
+      // 新的下注类型，直接添加（不替换其他类型）
+      userBets[betType] = amount;
+
+      // 检查用户是否已经有其他类型的下注
+      const otherBetTypes = Object.entries(userBets).filter(
+        ([key, value]) => key !== 'userName' && key !== betType && typeof value === 'number' && value > 0
+      );
+
+      if (otherBetTypes.length > 0) {
+        this.logger.info('新增不同类型下注', {
+          operation: 'bet-add-different-type',
+          userId,
+          userName,
+          newBetType: betType,
+          newAmount: amount,
+          existingBets: otherBetTypes.map(([type, amt]) => `${type}:${amt}`).join(', ')
+        });
+      } else {
+        this.logger.info('用户首次下注', {
+          operation: 'bet-first-time',
+          userId,
+          userName,
+          betType,
+          amount
+        });
+      }
+
       return {
-        finalAmount
+        finalAmount: amount,
+        isNewBetType: true  // 标记这是新的下注类型
       };
     }
   }
@@ -827,11 +844,11 @@ export class GameService extends BaseService {
       const diceService = this.getService(DiceService);
       let playerThirdCard: number | null = null;
 
-      // 闲家补牌逻辑
+      // 闲家补牌逻辑：两张牌点数合计为5(含)以下需补一张牌
       if (playerSum <= 5) {
         await diceService.sendBlockingMessage(
           this.game.chatId,
-          '👤 **闲家需要补牌...**'
+          `👤 **闲家点数${playerSum}，需要补牌...**`
         );
         this.logger.info('闲家需要补牌', { operation: 'handle-third-card', playerSum });
 
@@ -844,26 +861,62 @@ export class GameService extends BaseService {
         playerThirdCard = playerCard3Result.value;
         this.game.cards.player.push(playerThirdCard);
         this.logger.info('闲家补牌完成', { operation: 'deal-card', cardValue: playerThirdCard });
+      } else {
+        await diceService.sendBlockingMessage(
+          this.game.chatId,
+          `👤 **闲家点数${playerSum}，不需补牌**`
+        );
       }
 
       // 庄家补牌逻辑
       let bankerNeedCard = false;
-      if (playerThirdCard === null) {
-        bankerNeedCard = bankerSum <= 5;
-      } else {
-        if (bankerSum <= 2) bankerNeedCard = true;
-        else if (bankerSum === 3 && playerThirdCard !== 8) bankerNeedCard = true;
-        else if (bankerSum === 4 && [2, 3, 4, 5, 6, 7].includes(playerThirdCard)) bankerNeedCard = true;
-        else if (bankerSum === 5 && [4, 5, 6, 7].includes(playerThirdCard)) bankerNeedCard = true;
-        else if (bankerSum === 6 && [6, 7].includes(playerThirdCard)) bankerNeedCard = true;
+      let bankerReason = '';
+
+      if (bankerSum <= 4) {
+        // 庄家点数0-4皆需补牌
+        bankerNeedCard = true;
+        bankerReason = `点数${bankerSum}需补牌`;
+      } else if (bankerSum >= 7) {
+        // 7或以上不补牌
+        bankerNeedCard = false;
+        bankerReason = `点数${bankerSum}不补牌`;
+      } else if (bankerSum === 5) {
+        // 当庄家点数为5时：闲家补1、4、5、6庄家需补牌，其他则不补牌
+        if (playerThirdCard === null) {
+          bankerNeedCard = true;
+          bankerReason = `点数5且闲家未补牌需补牌`;
+        } else if ([1, 4, 5, 6].includes(playerThirdCard)) {
+          bankerNeedCard = true;
+          bankerReason = `点数5且闲家补牌${playerThirdCard}需补牌`;
+        } else {
+          bankerNeedCard = false;
+          bankerReason = `点数5且闲家补牌${playerThirdCard}不补牌`;
+        }
+      } else if (bankerSum === 6) {
+        // 当庄家点数为6时：闲家补6时庄家需补牌，其他则不补牌
+        if (playerThirdCard === null) {
+          bankerNeedCard = false;
+          bankerReason = `点数6且闲家未补牌不补牌`;
+        } else if (playerThirdCard === 6) {
+          bankerNeedCard = true;
+          bankerReason = `点数6且闲家补牌6需补牌`;
+        } else {
+          bankerNeedCard = false;
+          bankerReason = `点数6且闲家补牌${playerThirdCard}不补牌`;
+        }
       }
 
       if (bankerNeedCard) {
         await diceService.sendBlockingMessage(
           this.game.chatId,
-          '🏦 **庄家需要补牌...**'
+          `🏦 **庄家${bankerReason}...**`
         );
-        this.logger.info('庄家需要补牌', { operation: 'handle-third-card', bankerSum });
+        this.logger.info('庄家需要补牌', { 
+          operation: 'handle-third-card', 
+          bankerSum, 
+          playerThirdCard,
+          reason: bankerReason 
+        });
 
         this.logger.debug('发庄家第3张牌', { operation: 'deal-card', player: 'banker', cardIndex: 3 });
         const bankerCard3Result = await diceService.rollDice(this.game.chatId, 'banker', 3);
@@ -873,6 +926,17 @@ export class GameService extends BaseService {
 
         this.game.cards.banker.push(bankerCard3Result.value);
         this.logger.info('庄家补牌完成', { operation: 'deal-card', cardValue: bankerCard3Result.value });
+      } else {
+        await diceService.sendBlockingMessage(
+          this.game.chatId,
+          `🏦 **庄家${bankerReason}**`
+        );
+        this.logger.info('庄家不需要补牌', { 
+          operation: 'handle-third-card', 
+          bankerSum, 
+          playerThirdCard,
+          reason: bankerReason 
+        });
       }
 
       await this.context.state?.storage.put('game', this.game);

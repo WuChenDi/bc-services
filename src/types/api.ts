@@ -104,6 +104,8 @@ export interface PlaceBetResponse {
   isAccumulated?: boolean;
   /** 是否为替换下注 */
   isReplaced?: boolean;
+  /** 是否为新的下注类型 */
+  isNewBetType?: boolean;
   /** 之前的下注金额 */
   previousAmount?: number;
   /** 新增的下注金额 */

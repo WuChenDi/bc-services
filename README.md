@@ -34,9 +34,14 @@
   - `banker` - 庄家胜（1:1赔率）
   - `player` - 闲家胜（1:1赔率）
   - `tie` - 和局（8:1赔率）
-- **补牌规则**：严格按照百家乐标准规则（闲家0-5点补牌，庄家根据规则判断）
-- **点数计算**：使用 `Telegram` 骰子（1-6点）模拟牌值，总和取个位数
-- **天牌规则**：庄家或闲家前两张牌总和为8或9点，直接结束游戏
+- **点数计算**：依照骰子1~6点数值，进行两次投掷计算。当总数值超过10时，只会计算总和的个位数。例如，如果一手牌是6和5，总和是11，其点数为1。
+- **补牌规则**：
+  - **天牌规则**：庄闲任一家点数总和为8、9视为天牌，双方皆不补牌
+  - **闲家补牌**：两张牌点数合计为5(含)以下需补一张牌，6或以上则不需补牌
+  - **庄家补牌**：
+    - 庄家点数合计为0-4皆需补牌，7或以上不补牌
+    - 当庄家点数为5时：闲家补1、4、5、6庄家需补牌，其他则不补牌
+    - 当庄家点数为6时：闲家补6时庄家需补牌，其他则不补牌
 
 ### 🔧 HTTP API 接口
 - `GET /` - 返回服务状态
@@ -648,30 +653,77 @@ private async processQueue(): Promise<void> {
 
 ```typescript
 private async handleThirdCard(bankerSum: number, playerSum: number): Promise<void> {
+  const diceService = this.getService(DiceService);
   let playerThirdCard: number | null = null;
 
-  // 闲家补牌逻辑
+  // 闲家补牌逻辑：两张牌点数合计为5(含)以下需补一张牌
   if (playerSum <= 5) {
-    playerThirdCard = await this.diceService.rollDice(chatId, 'player', 3);
+    await diceService.sendBlockingMessage(
+      this.game.chatId,
+      `👤 **闲家点数${playerSum}，需要补牌...**`
+    );
+    
+    const playerCard3Result = await diceService.rollDice(this.game.chatId, 'player', 3);
+    playerThirdCard = playerCard3Result.value!;
     this.game.cards.player.push(playerThirdCard);
+  } else {
+    await diceService.sendBlockingMessage(
+      this.game.chatId,
+      `👤 **闲家点数${playerSum}，不需补牌**`
+    );
   }
 
   // 庄家补牌逻辑
   let bankerNeedCard = false;
-  if (playerThirdCard === null) {
-    bankerNeedCard = bankerSum <= 5;
-  } else {
-    // 根据庄家点数和闲家第三张牌决定
-    if (bankerSum <= 2) bankerNeedCard = true;
-    else if (bankerSum === 3 && playerThirdCard !== 8) bankerNeedCard = true;
-    else if (bankerSum === 4 && [2,3,4,5,6,7].includes(playerThirdCard)) bankerNeedCard = true;
-    else if (bankerSum === 5 && [4,5,6,7].includes(playerThirdCard)) bankerNeedCard = true;
-    else if (bankerSum === 6 && [6,7].includes(playerThirdCard)) bankerNeedCard = true;
+  let bankerReason = '';
+
+  if (bankerSum <= 4) {
+    // 庄家点数0-4皆需补牌
+    bankerNeedCard = true;
+    bankerReason = `点数${bankerSum}需补牌`;
+  } else if (bankerSum >= 7) {
+    // 7或以上不补牌
+    bankerNeedCard = false;
+    bankerReason = `点数${bankerSum}不补牌`;
+  } else if (bankerSum === 5) {
+    // 当庄家点数为5时：闲家补1、4、5、6庄家需补牌，其他则不补牌
+    if (playerThirdCard === null) {
+      bankerNeedCard = true;
+      bankerReason = `点数5且闲家未补牌需补牌`;
+    } else if ([1, 4, 5, 6].includes(playerThirdCard)) {
+      bankerNeedCard = true;
+      bankerReason = `点数5且闲家补牌${playerThirdCard}需补牌`;
+    } else {
+      bankerNeedCard = false;
+      bankerReason = `点数5且闲家补牌${playerThirdCard}不补牌`;
+    }
+  } else if (bankerSum === 6) {
+    // 当庄家点数为6时：闲家补6时庄家需补牌，其他则不补牌
+    if (playerThirdCard === null) {
+      bankerNeedCard = false;
+      bankerReason = `点数6且闲家未补牌不补牌`;
+    } else if (playerThirdCard === 6) {
+      bankerNeedCard = true;
+      bankerReason = `点数6且闲家补牌6需补牌`;
+    } else {
+      bankerNeedCard = false;
+      bankerReason = `点数6且闲家补牌${playerThirdCard}不补牌`;
+    }
   }
 
   if (bankerNeedCard) {
-    const bankerThirdCard = await this.diceService.rollDice(chatId, 'banker', 3);
-    this.game.cards.banker.push(bankerThirdCard);
+    await diceService.sendBlockingMessage(
+      this.game.chatId,
+      `🏦 **庄家${bankerReason}...**`
+    );
+    
+    const bankerCard3Result = await diceService.rollDice(this.game.chatId, 'banker', 3);
+    this.game.cards.banker.push(bankerCard3Result.value!);
+  } else {
+    await diceService.sendBlockingMessage(
+      this.game.chatId,
+      `🏦 **庄家${bankerReason}**`
+    );
   }
 }
 ```
@@ -799,47 +851,129 @@ Bot: 🎯 **🏦 庄家第1张牌开出：4 点**
 
 # 继续发牌
 Bot: 🎲 (骰子动画滚动 4秒)
-Bot: 🎯 **👤 闲家第1张牌开出：6 点**
+Bot: 🎯 **👤 闲家第1张牌开出：2 点**
 
 Bot: 🎲 (骰子动画滚动 4秒)
-Bot: 🎯 **🏦 庄家第2张牌开出：3 点**
+Bot: 🎯 **🏦 庄家第2张牌开出：1 点**
 
 Bot: 🎲 (骰子动画滚动 4秒)
-Bot: 🎯 **👤 闲家第2张牌开出：2 点**
+Bot: 🎯 **👤 闲家第2张牌开出：3 点**
      
 Bot: 📊 **前两张牌点数:**
-     🏦 庄家: 4 + 3 = **7 点**
-     👤 闲家: 6 + 2 = **8 点**
-     
-Bot: 🎯 **天牌！无需补牌！**
+     🏦 庄家: 4 + 1 = **5 点**
+     👤 闲家: 2 + 3 = **5 点**
+
+# 补牌阶段 - 根据新规则
+Bot: 👤 **闲家点数5，需要补牌...**
+Bot: 🎲 (骰子动画滚动 4秒)
+Bot: 🎯 **👤 闲家第3张牌开出：6 点**
+
+Bot: 🏦 **庄家点数5且闲家补牌6需补牌...**
+Bot: 🎲 (骰子动画滚动 4秒)
+Bot: 🎯 **🏦 庄家第3张牌开出：2 点**
      
 Bot: 🎯 **第 20250719143001 局开牌结果**
-     🏦 庄家最终点数: 7 点
-     👤 闲家最终点数: 8 点
+     🏦 庄家最终点数: 7 点 (4+1+2)
+     👤 闲家最终点数: 1 点 (2+3+6=11→1)
      
-     🏆 **👤 闲家胜！**
+     🏆 **🏦 庄家胜！**
      
      ✅ **获胜者:**
-     玩家B: +50
+     玩家A: +100
      
      ❌ **失败者:**
-     玩家A: -100
+     玩家B: -50
      
      📊 **本局统计:**
-     💰 总赔付: 50 点
-     💸 总收取: 100 点
-     📈 庄家盈亏: +50 点
+     💰 总赔付: 100 点
+     💸 总收取: 50 点
+     📈 庄家盈亏: -50 点
      
      🎮 **手动游戏模式**
      💡 使用 /newgame 开始新游戏
      🤖 使用 /autogame 开启自动模式
 ```
 
-### 4. 自动游戏模式
+### 4. 天牌情况示例
+```
+Bot: 📊 **前两张牌点数:**
+     🏦 庄家: 6 + 3 = **9 点**
+     👤 闲家: 4 + 2 = **6 点**
+     
+Bot: 🎯 **天牌！无需补牌！**
+     
+Bot: 🎯 **第 20250719143002 局开牌结果**
+     🏦 庄家最终点数: 9 点
+     👤 闲家最终点数: 6 点
+     
+     🏆 **🏦 庄家胜！**
+```
+
+### 5. 补牌规则详细示例
+
+#### 5.1 闲家不需补牌，庄家需补牌
+```
+Bot: 📊 **前两张牌点数:**
+     🏦 庄家: 2 + 1 = **3 点**
+     👤 闲家: 5 + 2 = **7 点**
+     
+Bot: 👤 **闲家点数7，不需补牌**
+Bot: 🏦 **庄家点数3需补牌...**
+Bot: 🎲 (骰子动画滚动 4秒)
+Bot: 🎯 **🏦 庄家第3张牌开出：4 点**
+     
+Bot: 🎯 **第 20250719143003 局开牌结果**
+     🏦 庄家最终点数: 7 点 (2+1+4)
+     👤 闲家最终点数: 7 点
+     
+     🏆 **🤝 和局！**
+```
+
+#### 5.2 庄家点数为6时的补牌规则
+```
+Bot: 📊 **前两张牌点数:**
+     🏦 庄家: 4 + 2 = **6 点**
+     👤 闲家: 1 + 2 = **3 点**
+     
+Bot: 👤 **闲家点数3，需要补牌...**
+Bot: 🎲 (骰子动画滚动 4秒)
+Bot: 🎯 **👤 闲家第3张牌开出：6 点**
+
+Bot: 🏦 **庄家点数6且闲家补牌6需补牌...**
+Bot: 🎲 (骰子动画滚动 4秒)
+Bot: 🎯 **🏦 庄家第3张牌开出：1 点**
+     
+Bot: 🎯 **第 20250719143004 局开牌结果**
+     🏦 庄家最终点数: 7 点 (4+2+1)
+     👤 闲家最终点数: 9 点 (1+2+6)
+     
+     🏆 **👤 闲家胜！**
+```
+
+#### 5.3 庄家点数为6，闲家补牌非6时不补牌
+```
+Bot: 📊 **前两张牌点数:**
+     🏦 庄家: 3 + 3 = **6 点**
+     👤 闲家: 2 + 1 = **3 点**
+     
+Bot: 👤 **闲家点数3，需要补牌...**
+Bot: 🎲 (骰子动画滚动 4秒)
+Bot: 🎯 **👤 闲家第3张牌开出：4 点**
+
+Bot: 🏦 **庄家点数6且闲家补牌4不补牌**
+     
+Bot: 🎯 **第 20250719143005 局开牌结果**
+     🏦 庄家最终点数: 6 点
+     👤 闲家最终点数: 7 点 (2+1+4)
+     
+     🏆 **👤 闲家胜！**
+```
+
+### 6. 自动游戏模式
 ```
 管理员: /autogame
 Bot: ✅ 自动游戏模式已启用
-     🤖 **自动游戏 - 第 20250719143002 局开始！**
+     🤖 **自动游戏 - 第 20250719143006 局开始！**
      💰 下注时间：30秒
      📝 下注格式：/bet banker 100
      ⏰ 30秒后将自动处理游戏...
@@ -849,6 +983,93 @@ Bot: ✅ 自动游戏模式已启用
 Bot: 🤖 **自动游戏模式进行中**
      ⏰ 10秒后自动开始下一局
      🛑 使用 /stopauto 关闭自动模式
+     📊 本次已完成 5 局游戏
+```
+
+### 7. 无人下注情况
+```
+Bot: ⛔ **第 20250719143007 局停止下注！**
+
+Bot: 😔 **第 20250719143007 局无人下注**
+
+     🎲 但游戏继续进行，开始发牌...
+
+# 继续正常发牌流程，但结果中不显示输赢统计
+Bot: 🎯 **第 20250719143007 局开牌结果**
+     🏦 庄家最终点数: 5 点
+     👤 闲家最终点数: 8 点
+     
+     🏆 **👤 闲家胜！**
+     
+     😔 **无人下注**
+     
+     🎮 **手动游戏模式**
+     💡 使用 /newgame 开始新游戏
+     🤖 使用 /autogame 开启自动模式
+```
+
+### 8. 累加和替换下注示例
+```
+玩家A: /bet banker 100
+Bot: ✅ 下注成功！
+     类型: 庄家
+     金额: 100 点
+
+玩家A: /bet banker 50
+Bot: ✅ 下注成功！
+     类型: 庄家  
+     金额: 150 点 (累加：原100点 + 新增50点)
+
+玩家A: /bet player 200
+Bot: ✅ 下注成功！
+     类型: 闲家
+     金额: 200 点 (替换：取消庄家150点，改投闲家200点)
+```
+
+### 9. 查看游戏状态和历史
+```
+用户: /status
+Bot: 📊 **游戏状态**
+     🎮 状态: 下注中
+     🎯 游戏编号: 20250719143008
+     👥 参与人数: 3 人
+     💰 总下注: 350 点
+     ⏰ 剩余时间: 15 秒
+
+用户: /history
+Bot: 📊 **最近10局游戏记录**
+     
+     1. **20250719143007**
+        07/19 14:35 | 👤闲 | 5-8 | 0人
+     
+     2. **20250719143006**
+        07/19 14:34 | 🏦庄 | 7-6 | 2人
+     
+     3. **20250719143005**
+        07/19 14:33 | 👤闲 | 6-7 | 1人
+     
+     💡 使用 /gameinfo <游戏编号> 查看详情
+
+用户: /gameinfo 20250719143005
+Bot: 🎯 **游戏详情 - 20250719143005**
+     
+     📅 开始时间: 2025/07/19 14:33:15
+     ⏰ 结束时间: 2025/07/19 14:33:52
+     ⏱️ 游戏时长: 37秒
+     
+     🎲 **开牌结果:**
+     🏦 庄家: 3 + 3 = 6点
+     👤 闲家: 2 + 1 + 4 = 7点
+     🏆 **👤 闲家胜**
+     
+     💰 **下注情况:**
+     👥 参与人数: 1
+     💵 总下注额: 100点
+     
+     📊 **分类下注:**
+     🏦 庄家: 100点
+     👤 闲家: 0点
+     🤝 和局: 0点
 ```
 
 ## API 使用示例
