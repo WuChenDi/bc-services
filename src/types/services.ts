@@ -351,7 +351,7 @@ export interface GameTimer {
   /** 执行回调函数 */
   callback: () => Promise<void> | void;
   /** 浏览器定时器ID */
-  timerId?: number;
+  timerId?: NodeJS.Timeout;
   /** 当前重试次数 */
   retries?: number;
   /** 最大重试次数 */

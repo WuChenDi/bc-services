@@ -46,7 +46,7 @@ export class MessageQueueService extends BaseService {
   private waitingPromises: Map<string, {
     resolve: () => void;
     reject: (error: Error) => void;
-    timeout?: number;
+    timeout?: NodeJS.Timeout;
   }> = new Map();
 
   constructor(container: ServiceContainer) {

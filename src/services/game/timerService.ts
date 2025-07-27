@@ -25,7 +25,7 @@ export class TimerService extends BaseService {
   private timerCounter = 0;
   private timerConfig: TimerServiceConfig;
   private stats: TimerStats;
-  private cleanupTimerId?: number;
+  private cleanupTimerId?: NodeJS.Timeout;
 
   constructor(container: ServiceContainer) {
     super(container, {
