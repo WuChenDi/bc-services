@@ -1,5 +1,5 @@
 import { Context } from 'grammy';
-import { BetType } from '@/types';
+import { BetType, type ServiceContext } from '@/types';
 import { BotService, StorageService, LoggerService } from '@/services';
 import { formatGameInfo, formatGameHistory } from '@/utils';
 
@@ -20,9 +20,9 @@ export class CommandHandlers {
     private botService: BotService,
     private storageService: StorageService,
     private logger: LoggerService,
-    gameRoomsBinding: DurableObjectNamespace
+    private context: ServiceContext
   ) {
-    this.gameRoomsBinding = gameRoomsBinding;
+    this.gameRoomsBinding = context.env.GAME_ROOMS;
     this.registerCommands();
     this.logger.info('命令处理器已初始化', {
       operation: 'command-handlers-init'
@@ -218,7 +218,7 @@ export class CommandHandlers {
         await this.sendSuccessMessage(ctx,
           `🎮 新游戏已开始！\n` +
           `游戏编号: ${result.gameNumber}\n` +
-          `⏰ 下注时间: 30秒\n` +
+          `⏰ 下注时间: ${this.context.constants.BETTING_DURATION_MS / 1000}秒\n` +
           `💰 使用 /bet 命令进行下注`
         );
       } else {
@@ -257,7 +257,7 @@ export class CommandHandlers {
       if (result.success) {
         await this.sendSuccessMessage(ctx,
           `🤖 自动游戏模式已开启！\n` +
-          `🔄 游戏将每10秒自动进行\n` +
+          `🔄 游戏将每${this.context.constants.AUTO_GAME_INTERVAL_MS / 1000}秒自动进行\n` +
           `🛑 使用 /stopauto 停止自动模式`
         );
       } else {
@@ -616,17 +616,22 @@ export class CommandHandlers {
     });
 
     try {
-      await ctx.reply('🛑 正在停止游戏...');
+      await ctx.reply('🛑 正在强制停止游戏...');
 
-      const result = await this.callGameRoomAPI(chatId, '/disable-auto');
+      // 1. 先禁用自动游戏
+      const disableAutoResult = await this.callGameRoomAPI(chatId, '/disable-auto');
+      
+      // 2. 强制停止当前游戏
+      const stopGameResult = await this.callGameRoomAPI(chatId, '/force-stop-game', 'POST');
 
-      if (result.success) {
+      if (stopGameResult.success) {
         await this.sendSuccessMessage(ctx,
-          `🛑 游戏已停止\n` +
+          `🛑 游戏已强制停止\n` +
+          `🧹 所有进行中的操作已清理\n` +
           `🎮 使用 /newgame 开始新游戏`
         );
       } else {
-        await this.sendErrorMessage(ctx, result.error || '停止游戏失败');
+        await this.sendErrorMessage(ctx, stopGameResult.error || '停止游戏失败');
       }
     } catch (error) {
       this.logger.error('处理stopgame命令失败', {
@@ -667,10 +672,10 @@ export class CommandHandlers {
       `/gameinfo <编号> - 查看游戏详情\n\n` +
       `📏 **使用规则：**\n` +
       `• 单次下注金额：1-10000点\n` +
-      `• 下注时间：30秒\n` +
+      `• 下注时间：${this.context.constants.BETTING_DURATION_MS / 1000}秒\n` +
       `• 和局赔率：1:8\n` +
       `• 庄家/闲家赔率：1:1\n\n` +
-      `💡 自动模式下游戏将持续进行，每局间隔10秒\n\n` +
+      `💡 自动模式下游戏将持续进行，每局间隔${this.context.constants.AUTO_GAME_INTERVAL_MS / 1000}秒\n\n` +
       `🎯 所有功能现已完全支持，直接使用命令即可！`,
       { parse_mode: 'Markdown' }
     );

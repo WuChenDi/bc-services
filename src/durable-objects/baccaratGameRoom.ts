@@ -50,6 +50,8 @@ export class BaccaratGameRoom {
           return await this.handleGetStatus();
         case '/stop-game':
           return await this.handleStopGame();
+        case '/force-stop-game':
+          return await this.handleForceStopGame(request);
         case '/enable-auto':
           return await this.handleEnableAuto(request);
         case '/disable-auto':
@@ -354,8 +356,7 @@ export class BaccaratGameRoom {
       console.log('[BaccaratGameRoom] 停止游戏');
 
       const gameService = this.getGameService();
-      await gameService.disableAutoGame();
-      await gameService.cleanupGame();
+      await gameService.forceStopCurrentGame();
 
       return Response.json({
         success: true,
@@ -365,6 +366,38 @@ export class BaccaratGameRoom {
     } catch (error) {
       console.error('[BaccaratGameRoom] 停止游戏失败:', error);
       return this.createErrorResponse('Failed to stop game', 500);
+    }
+  }
+
+  /**
+   * 处理强制停止游戏请求
+   */
+  private async handleForceStopGame(request: Request): Promise<Response> {
+    try {
+      const chatId = await this.extractChatId(request);
+      
+      console.log(`[BaccaratGameRoom] 强制停止游戏: chatId=${chatId}`);
+
+      const gameService = this.getGameService();
+      
+      // 1. 禁用自动游戏
+      await gameService.disableAutoGame();
+      
+      // 2. 强制清理当前游戏
+      await gameService.forceStopCurrentGame();
+      
+      // 3. 清理消息队列
+      gameService.clearMessageQueue();
+
+      return Response.json({
+        success: true,
+        message: '游戏已强制停止',
+        chatId,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('[BaccaratGameRoom] 强制停止游戏失败:', error);
+      return this.createErrorResponse('Failed to force stop game', 500);
     }
   }
 

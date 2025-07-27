@@ -43,7 +43,7 @@ export class ApiHandlers {
       botService,
       storageService,
       logger,
-      context.env.GAME_ROOMS
+      context
     );
 
     // 注册所有路由

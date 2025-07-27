@@ -1161,9 +1161,9 @@ export class GameService extends BaseService {
         await diceService.sendBlockingMessage(
           chatId,
           `🤖 **自动游戏 - 第 ${result.gameNumber} 局开始！**\n\n` +
-          `💰 下注时间：30秒\n` +
+          `💰 下注时间：${this.gameConfig.bettingDurationMs / 1000}秒\n` +
           `📝 下注格式：/bet banker 100\n` +
-          `⏰ 30秒后将自动处理游戏...\n` +
+          `⏰ ${this.gameConfig.bettingDurationMs / 1000}秒后将自动处理游戏...\n` +
           `🔄 游戏将持续自动进行`
         );
         this.logger.info('自动游戏启动成功', { operation: 'start-auto-game', gameId: result.gameNumber });
@@ -1235,6 +1235,106 @@ export class GameService extends BaseService {
       return { success: false, error: '无法禁用自动游戏' };
     }
   }
+
+  /**
+   * 强制停止当前游戏
+   */
+  async forceStopCurrentGame(): Promise<void> {
+    const timer = this.createTimer('force-stop-current-game', { 
+      gameId: this.game?.gameNumber 
+    });
+
+    try {
+      this.logger.warn('强制停止当前游戏', {
+        operation: 'force-stop-current-game',
+        gameId: this.game?.gameNumber,
+        gameState: this.game?.state,
+        isProcessing: this.isProcessing,
+        revealingInProgress: this.revealingInProgress
+      });
+
+      // 1. 发送停止消息
+      if (this.game) {
+        const diceService = this.getService(DiceService);
+        await diceService.sendMessage(
+          this.game.chatId,
+          `🛑 **游戏已被强制停止**\n\n` +
+          `📋 游戏编号: ${this.game.gameNumber}\n` +
+          `⚠️ 所有进行中的操作已被终止\n` +
+          `💡 使用 /newgame 开始新游戏`
+        );
+      }
+
+      // 2. 取消所有定时器
+      const timerService = this.getService(TimerService);
+      const cancelledCount = timerService.cancelAllTimers();
+
+      // 3. 清空消息队列
+      const diceService = this.getService(DiceService);
+      diceService.clearMessageQueue();
+
+      // 4. 重置所有状态标志
+      this.resetAllFlags();
+
+      // 5. 清理游戏状态
+      const oldGameId = this.game?.gameNumber;
+      this.game = null;
+
+      // 6. 删除持久化状态
+      await this.context.state?.storage.delete('game');
+      await this.context.state?.storage.put('autoGame', false);
+
+      // 7. 清除容器上下文
+      this.container.clearGameContext();
+
+      this.logger.info('游戏强制停止完成', {
+        operation: 'force-stop-complete',
+        stoppedGameId: oldGameId,
+        cancelledTimers: cancelledCount
+      });
+
+      timer.end({ success: true, stoppedGameId: oldGameId });
+
+    } catch (error) {
+      this.logger.error('强制停止游戏失败', {
+        operation: 'force-stop-error',
+        gameId: this.game?.gameNumber
+      }, error);
+
+      timer.end({ success: false, error: true });
+      throw error;
+    }
+  }
+
+  /**
+   * 清理消息队列（公开方法）
+   */
+  // clearMessageQueue(): void {
+  //   const timer = this.createTimer('clear-message-queue-public', { 
+  //     gameId: this.game?.gameNumber 
+  //   });
+    
+  //   this.logger.info('手动清空消息队列', { 
+  //     operation: 'clear-queue-manual' 
+  //   });
+
+  //   try {
+  //     const diceService = this.getService(DiceService);
+  //     diceService.clearMessageQueue();
+      
+  //     this.logger.info('消息队列清空成功', { 
+  //       operation: 'clear-queue-success' 
+  //     });
+      
+  //     timer.end({ success: true });
+  //   } catch (error) {
+  //     this.logger.error('清空消息队列失败', { 
+  //       operation: 'clear-queue-error' 
+  //     }, error);
+      
+  //     timer.end({ success: false, error: true });
+  //   }
+  // }
 
   /**
    * 设置倒计时定时器
