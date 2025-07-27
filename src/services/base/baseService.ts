@@ -55,7 +55,7 @@ export abstract class BaseService implements ServiceLifecycle, ServiceHealth {
     // 设置服务配置
     this.config = {
       name: this.constructor.name,
-      debug: false,
+      debug: process.env.NODE_ENV === 'dev',
       ...config
     };
 

@@ -1,6 +1,14 @@
 {
   "name": "bc-services",
   "type": "module",
+  "version": "1.0.0",
+  "description": "Baccarat Telegram Bot Services",
+  "author": "wudi <wuchendi96@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WuChenDi/bc-services.git"
+  },
   "scripts": {
     "dev": "wrangler dev --ip 0.0.0.0 --port 3000 src/index.ts",
     "deploy": "wrangler deploy --minify",
@@ -12,10 +20,11 @@
   },
   "dependencies": {
     "grammy": "^1.37.0",
-    "hono": "^4.8.5"
+    "hono": "^4.8.9"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250722.0",
-    "wrangler": "^4.25.0"
+    "@cloudflare/workers-types": "^4.20250726.0",
+    "@types/node": "^22",
+    "wrangler": "^4.26.0"
   }
 }
